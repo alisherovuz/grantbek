@@ -67,6 +67,26 @@ def _is_trivial(text: str) -> bool:
     return False
 
 
+# Substrings (en / uz / ru) that signal a message is actually about
+# grants, scholarships, or studying. Used to ignore off-topic group chatter.
+_GRANT_TERMS = (
+    "grant", "scholar", "fellowship", "fund", "tuition", "stipend", "deadline",
+    "apply", "applicat", "eligib", "univers", "college", "study", "studies",
+    "abroad", "ielts", "toefl", "gpa", "admission", "bachelor", "master", "phd",
+    "program", "camp", "exchange", "internship", "course", "degree", "visa",
+    "stipendiya", "ariza", "muddat", "o'qish", "oqish", "talaba", "magistratura",
+    "bakalavr", "dastur", "qatnash", "ro'yxat", "royxat", "tanlov", "imkoniyat",
+    "xorij", "chet", "ingliz", "til", "yosh", "universitet", "stipend",
+    "грант", "стипенди", "учеб", "универ", "заявк", "дедлайн", "обучен",
+    "стажировк", "программ", "поступл",
+)
+
+
+def _is_grant_related(text: str) -> bool:
+    t = text.lower()
+    return any(term in t for term in _GRANT_TERMS)
+
+
 def _extract_post_text(message: Message) -> str | None:
     """If this message is a comment under a channel post, return that post's text.
 
@@ -163,6 +183,7 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await _answer_under_post(msg, post_text, _strip_mention(text), lang)
         return
 
-    # Case 2: not under a post — only respond if explicitly addressed.
-    if mentioned:
+    # Case 2: not under a post — only respond to an explicit mention/reply AND
+    # only when the message is actually about grants. Ignore off-topic chatter.
+    if mentioned and _is_grant_related(text):
         await _answer_general(msg, _strip_mention(text), lang)
