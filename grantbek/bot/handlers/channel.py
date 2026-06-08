@@ -82,8 +82,8 @@ async def _answer_general(message: Message, question: str, lang: str) -> None:
     faq = await faq_svc.find_faq(question)
     grants = await gs.search_grants(question, limit=3)
 
-    if settings.llm_enabled and (faq or grants):
-        answer = await llm.answer(question, grants, faq, lang)
+    if settings.llm_enabled and (faq or grants or settings.enable_web_search):
+        answer = await llm.answer(question, grants, faq, lang, allow_web=True)
         if answer:
             await message.reply_text(answer, disable_web_page_preview=True)
             return

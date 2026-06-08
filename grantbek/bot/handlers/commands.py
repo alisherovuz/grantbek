@@ -180,9 +180,9 @@ async def free_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     faq = await faq_svc.find_faq(text)
     grants = await gs.search_grants(text, limit=4)
 
-    # If Claude is configured, let it phrase a grounded answer.
-    if llm.settings.llm_enabled and (faq or grants):
-        answer = await llm.answer(text, grants, faq, lang)
+    # If Claude is configured, let it phrase a grounded answer (with web research).
+    if llm.settings.llm_enabled and (faq or grants or llm.settings.enable_web_search):
+        answer = await llm.answer(text, grants, faq, lang, allow_web=True)
         if answer:
             await msg.reply_text(answer, disable_web_page_preview=True)
             return

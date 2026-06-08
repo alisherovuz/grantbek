@@ -57,7 +57,14 @@ class Settings:
     # ── Claude API (optional). If unset, the bot uses keyword-only FAQ. ──
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     llm_model: str = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
-    llm_max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "600"))
+    llm_max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "400"))
+
+    # Let Claude research grants on the web when the DB doesn't cover a question.
+    # Costs $10 per 1,000 searches + token costs. Set ENABLE_WEB_SEARCH=false to disable.
+    enable_web_search: bool = os.getenv("ENABLE_WEB_SEARCH", "true").lower() in (
+        "1", "true", "yes", "on",
+    )
+    web_search_max_uses: int = int(os.getenv("WEB_SEARCH_MAX_USES", "3"))
 
     # Footer handle shown at the bottom of every grant post.
     channel_handle: str = os.getenv("CHANNEL_HANDLE", "@EduGrandsUz")

@@ -55,10 +55,9 @@ async def lifespan(_: FastAPI):
         yield
     finally:
         # ── Shutdown ──
-        try:
-            await application.bot.delete_webhook()
-        except Exception:
-            pass
+        # NOTE: do NOT delete the webhook here. On Railway, the old container's
+        # shutdown can run after the new one has set the webhook, wiping it. The
+        # webhook should persist across restarts; startup re-sets it idempotently.
         await application.stop()
         await application.shutdown()
         await database.close_connection()
