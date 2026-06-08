@@ -42,6 +42,31 @@ def _looks_substantive(text: str) -> bool:
     return len(words) >= 2
 
 
+_ACK_WORDS = {
+    "rahmat", "raxmat", "rahmet", "tashakkur", "tnx", "thanks", "thank", "thankyou",
+    "thx", "ok", "okay", "okey", "good", "nice", "cool", "great", "spasibo",
+    "спасибо", "спс", "salom", "assalom", "hi", "hello", "hey", "yes", "yeah",
+    "ha", "yoq", "no", "omad", "zor",
+}
+
+
+def _is_trivial(text: str) -> bool:
+    """True for emoji-only messages and short acknowledgments/greetings.
+
+    These get NO reply, even when they're a reply to the bot — so a simple
+    'rahmat' doesn't trigger a wall of text.
+    """
+    cleaned = re.sub(r"[^\w\s\u0400-\u04FF]", "", text.strip().lower()).strip()
+    if not cleaned:  # emoji / punctuation only
+        return True
+    if len(cleaned) < 3:
+        return True
+    words = cleaned.split()
+    if len(words) <= 2 and all(w in _ACK_WORDS for w in words):
+        return True
+    return False
+
+
 def _extract_post_text(message: Message) -> str | None:
     """If this message is a comment under a channel post, return that post's text.
 
@@ -118,6 +143,10 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     text = (msg.text or msg.caption or "").strip()
     if not text:
+        return
+
+    # Never reply to bare thanks/greetings/emoji — even if it's a reply to us.
+    if _is_trivial(text):
         return
 
     lang = await get_lang(user.id, user.language_code)
