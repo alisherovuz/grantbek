@@ -56,26 +56,25 @@ def _extract_post_text(message: Message) -> str | None:
     return None
 
 
-async def _answer_about_grant(message: Message, grant: dict, question: str, lang: str) -> None:
+async def _answer_under_post(message: Message, post_text: str, question: str, lang: str) -> None:
+    """Answer a comment using the channel post it's under as the source of truth."""
     faq = await faq_svc.find_faq(question)
 
     if settings.llm_enabled:
-        answer = await llm.answer(question, [grant], faq, lang)
+        answer = await llm.answer(
+            question, [], faq, lang, allow_web=True, post_text=post_text
+        )
         if answer:
             await message.reply_text(answer, disable_web_page_preview=True)
             return
 
-    # Fallbacks when Claude is unavailable.
+    # Fallback when Claude is unavailable.
     if faq:
         await message.reply_text(
             faq_svc.format_faq_response(faq, lang), parse_mode=ParseMode.HTML
         )
         return
-    await message.reply_text(
-        gs.format_grant_brief(grant, lang),
-        parse_mode=ParseMode.HTML,
-        disable_web_page_preview=True,
-    )
+    await message.reply_text(t("no_results", lang))
 
 
 async def _answer_general(message: Message, question: str, lang: str) -> None:
@@ -124,17 +123,17 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
     lang = await get_lang(user.id, user.language_code)
     mentioned = custom_filters.bot_mentioned.filter(msg)
 
-    # Case 1: comment under a recognised grant post.
+    # Case 1: comment under a channel post → answer about that post's grant,
+    # using the post text itself as the source of truth.
     post_text = _extract_post_text(msg)
-    grant = await gs.match_grant_from_post(post_text) if post_text else None
-    if grant is not None:
+    if post_text:
         if not (settings.group_auto_reply or mentioned):
             return
         if not mentioned and not _looks_substantive(text):
             return  # don't reply to a lone emoji / "rahmat" under a post
-        await _answer_about_grant(msg, grant, _strip_mention(text), lang)
+        await _answer_under_post(msg, post_text, _strip_mention(text), lang)
         return
 
-    # Case 2: not under a known grant - only respond if explicitly addressed.
+    # Case 2: not under a post — only respond if explicitly addressed.
     if mentioned:
         await _answer_general(msg, _strip_mention(text), lang)

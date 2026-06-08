@@ -64,8 +64,19 @@ _WEB_SYSTEM = (
 _LANG_NAME = {"en": "English", "uz": "Uzbek (o'zbek tili)"}
 
 
-def _build_context(grants: list[dict[str, Any]], faq: Optional[dict[str, Any]], lang: str) -> str:
+def _build_context(
+    grants: list[dict[str, Any]],
+    faq: Optional[dict[str, Any]],
+    lang: str,
+    post_text: Optional[str] = None,
+) -> str:
     parts: list[str] = []
+    if post_text:
+        parts.append(
+            "[GRANT POST — the user is commenting under this exact channel post. "
+            "Answer about THIS grant, using this text as the source of truth]\n"
+            + post_text.strip()
+        )
     if faq:
         q = faq.get(f"question_{lang}") or faq.get("question_en") or ""
         a = faq.get(f"answer_{lang}") or faq.get("answer_en") or ""
@@ -92,17 +103,20 @@ async def answer(
     faq: Optional[dict[str, Any]],
     lang: str = "en",
     allow_web: bool = False,
+    post_text: Optional[str] = None,
 ) -> Optional[str]:
     """Return a grounded natural-language answer, or None on failure.
 
     When allow_web is True (and web search is enabled), Claude may use the
     web_search tool to research grants the curated DB doesn't cover.
+    When post_text is given, it's treated as the authoritative context (the
+    grant post the user is commenting under).
     """
     if not settings.llm_enabled:
         return None
 
     use_web = allow_web and settings.enable_web_search
-    context = _build_context(grants, faq, lang)
+    context = _build_context(grants, faq, lang, post_text)
     system = _WEB_SYSTEM if use_web else _SYSTEM
     user = f"CONTEXT:\n{context}\n\nUSER QUESTION:\n{question}"
 
