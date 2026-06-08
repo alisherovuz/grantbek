@@ -1,0 +1,278 @@
+{
+  "categories": [
+    {"slug": "stem", "name_en": "STEM & Engineering", "name_uz": "STEM va muhandislik"},
+    {"slug": "social", "name_en": "Social Sciences", "name_uz": "Ijtimoiy fanlar"},
+    {"slug": "arts", "name_en": "Arts & Humanities", "name_uz": "San'at va gumanitar fanlar"},
+    {"slug": "business", "name_en": "Business & Economics", "name_uz": "Biznes va iqtisodiyot"},
+    {"slug": "research", "name_en": "Research & PhD", "name_uz": "Tadqiqot va PhD"},
+    {"slug": "exchange", "name_en": "Exchange & Competitions", "name_uz": "Almashinuv va tanlovlar"}
+  ],
+  "grants": [
+    {
+      "title_en": "Caltech EWB Science & Engineering Competition",
+      "title_uz": "Caltech EWB Science & Engineering Competition",
+      "country": "AQSh", "flag": "🇺🇸",
+      "funding_level": "full", "format_mode": "", "age_category": "11-18",
+      "category_slug": "stem",
+      "description_en": "An international competition by Caltech Engineers Without Borders that lets students demonstrate their science and engineering knowledge through practical projects.",
+      "description_uz": "Caltech Engineers Without Borders tomonidan tashkil etilgan ushbu xalqaro tanlov o'quvchilarga fan va muhandislik sohalaridagi bilimlarini amaliy loyihalar orqali namoyish etish imkoniyatini beradi.",
+      "benefits_en": ["International certificate", "Global-scale competition experience", "Opportunity to develop STEM skills", "A strong portfolio boost for university applications"],
+      "benefits_uz": ["Xalqaro sertifikat", "Global miqyosdagi tanlov tajribasi", "STEM ko'nikmalarini rivojlantirish imkoniyati", "Kuchli portfolio va universitet arizalari uchun qo'shimcha yutuq"],
+      "deadline": "2026-06-17",
+      "url": "https://www.ewb-caltech.org/",
+      "extra_links": []
+    },
+    {
+      "title_en": "Aral Summer School 2026",
+      "title_uz": "Aral Summer School 2026",
+      "country": "Qozog'iston", "flag": "🇰🇿",
+      "funding_level": "full", "format_mode": "", "age_category": "18-40",
+      "category_slug": "social",
+      "description_en": "A program dedicated to the Sustainable Development Goals, water resources in Central Asia, and discussion of the Aral Sea problem.",
+      "description_uz": "Bu barqaror rivojlanish maqsadlari, Markaziy Osiyodagi suv resurslari, va Orol muammosi muhokamasiga bag'ishlangan dastur.",
+      "benefits_en": ["Lectures from international experts", "Field trips around the Aral region and hands-on experience", "A chance to contribute to solving an ecological problem", "All costs covered by the German MFA and IHE Delft"],
+      "benefits_uz": ["Xalqaro ekspertlardan leksiyalar", "Orol atrofiga safarlar va amaliy tajriba", "Ekologik muammoni hal qilishda o'z hissasini qo'shish imkoniyati", "Barcha harajatlari German MFA va IHE Delft tomonidan qoplanadi"],
+      "deadline": "2026-06-15",
+      "url": "https://www.un-ihe.org/",
+      "extra_links": []
+    },
+    {
+      "title_en": "LaunchX Fall 2026",
+      "title_uz": "LaunchX Fall 2026",
+      "country": "AQSh", "flag": "🇺🇸",
+      "funding_level": "", "format_mode": "Online", "age_category": "14-22",
+      "category_slug": "business",
+      "description_en": "🌪 Developed by MIT, LaunchX is an international program that lets students launch a startup, intern at real companies, and grow within a global network.",
+      "description_uz": "🌪 MIT (Massachusetts Institute of Technology) tomonidan ishlab chiqilgan LaunchX — o'quvchilarga startap ochish, real kompaniyalarda internship qilish va global tarmoqda rivojlanish imkonini beruvchi xalqaro dastur.",
+      "benefits_en": ["Deep knowledge of startups and business", "Work on a real startup or intern at one", "Work with experienced mentors", "Certificate and a global network", "Financial aid (scholarship) available"],
+      "benefits_uz": ["Startap va biznes bo'yicha chuqur bilimlar", "Haqiqiy startap ustida ishlash yoki startapda internship qilish", "Tajribali mentorlar bilan ishlash", "Sertifikat va xalqaro tarmoq", "Moliyaviy yordam (scholarship) mavjud"],
+      "deadline": "2026-07-01",
+      "url": "https://launchx.com/",
+      "extra_links": [{"emoji": "🎙", "label_en": "Our podcast with a program winner", "label_uz": "Dastur g'olibi bilan podkastimiz", "url": "https://t.me/EduGrandsUz"}]
+    },
+    {
+      "title_en": "Chevening Scholarship",
+      "title_uz": "Chevening stipendiyasi",
+      "country": "Buyuk Britaniya", "flag": "🇬🇧",
+      "funding_level": "full", "format_mode": "", "age_category": "21+",
+      "category_slug": "exchange",
+      "description_en": "A fully funded one-year master's degree at any UK university, covering tuition, living costs, and travel.",
+      "description_uz": "Buyuk Britaniyaning istalgan universitetida bir yillik magistratura uchun to'liq moliyalashtirilgan stipendiya. O'qish, yashash va yo'l xarajatlarini qoplaydi.",
+      "benefits_en": ["Full tuition coverage", "Monthly living stipend and travel costs", "Access to the global Chevening alumni network"],
+      "benefits_uz": ["O'qish to'lovi to'liq qoplanadi", "Oylik stipendiya va yo'l xarajatlari", "Global Chevening bitiruvchilari tarmog'i"],
+      "deadline": "2026-11-05",
+      "url": "https://www.chevening.org/",
+      "extra_links": []
+    },
+    {
+      "title_en": "Fulbright Foreign Student Program",
+      "title_uz": "Fulbright xorijiy talabalar dasturi",
+      "country": "AQSh", "flag": "🇺🇸",
+      "funding_level": "full", "format_mode": "", "age_category": "21+",
+      "category_slug": "research",
+      "description_en": "Funded graduate study, research, or teaching in the United States for international students.",
+      "description_uz": "AQShda magistratura, tadqiqot yoki o'qitish uchun xalqaro talabalarga moliyaviy yordam beruvchi dastur.",
+      "benefits_en": ["Tuition and living stipend", "Health insurance and travel", "Prestigious international alumni network"],
+      "benefits_uz": ["O'qish to'lovi va yashash stipendiyasi", "Tibbiy sug'urta va yo'l xarajati", "Nufuzli xalqaro bitiruvchilar tarmog'i"],
+      "deadline": "2026-10-15",
+      "url": "https://foreign.fulbrightonline.org/",
+      "extra_links": []
+    },
+    {
+      "title_en": "Erasmus Mundus Joint Masters",
+      "title_uz": "Erasmus Mundus qo'shma magistratura",
+      "country": "Yevropa Ittifoqi", "flag": "🇪🇺",
+      "funding_level": "full", "format_mode": "", "age_category": "21+",
+      "category_slug": "exchange",
+      "description_en": "Scholarships for joint master's programs delivered by university consortia across Europe.",
+      "description_uz": "Yevropadagi universitetlar konsortsiumlari tomonidan tashkil etilgan qo'shma magistratura dasturlari uchun stipendiyalar.",
+      "benefits_en": ["Study in two or more European countries", "Monthly stipend plus tuition", "A joint degree from multiple universities"],
+      "benefits_uz": ["Ikki yoki undan ortiq Yevropa davlatida o'qish", "Oylik stipendiya va o'qish to'lovi", "Bir nechta universitetdan qo'shma diplom"],
+      "deadline": "2027-01-15",
+      "url": "https://www.eacea.ec.europa.eu/scholarships/erasmus-mundus-catalogue_en",
+      "extra_links": []
+    },
+    {
+      "title_en": "DAAD Scholarships (Germany)",
+      "title_uz": "DAAD stipendiyalari (Germaniya)",
+      "country": "Germaniya", "flag": "🇩🇪",
+      "funding_level": "full", "format_mode": "", "age_category": "21+",
+      "category_slug": "research",
+      "description_en": "German Academic Exchange Service scholarships for master's and PhD study in Germany.",
+      "description_uz": "Germaniyada magistratura va PhD uchun Germaniya akademik almashinuv xizmati stipendiyalari.",
+      "benefits_en": ["Monthly living stipend", "Travel and insurance allowances", "Optional German language course"],
+      "benefits_uz": ["Oylik yashash stipendiyasi", "Yo'l va sug'urta to'lovlari", "Nemis tili kursi (ixtiyoriy)"],
+      "deadline": "2026-10-31",
+      "url": "https://www.daad.de/en/",
+      "extra_links": []
+    },
+    {
+      "title_en": "El-Yurt Umidi Foundation Scholarship",
+      "title_uz": "\"El-Yurt Umidi\" jamg'armasi stipendiyasi",
+      "country": "O'zbekiston", "flag": "🇺🇿",
+      "funding_level": "full", "format_mode": "", "age_category": "18+",
+      "category_slug": "research",
+      "description_en": "An Uzbek government scholarship funding study at top foreign universities, with a return-to-work commitment.",
+      "description_uz": "O'zbekiston hukumatining xorijning yetakchi universitetlarida o'qishni moliyalashtiruvchi stipendiyasi, vatanga qaytib ishlash sharti bilan.",
+      "benefits_en": ["Full tuition coverage", "Living, travel, and visa expenses", "Study at world-leading universities"],
+      "benefits_uz": ["O'qish to'lovi to'liq qoplanadi", "Yashash, yo'l va viza xarajatlari", "Dunyoning yetakchi universitetlarida o'qish"],
+      "deadline": "2026-07-01",
+      "url": "https://eyuf.uz/",
+      "extra_links": []
+    },
+    {
+      "title_en": "DeepMind / Google PhD Fellowship",
+      "title_uz": "DeepMind / Google PhD fellowship",
+      "country": "Global", "flag": "🌍",
+      "funding_level": "full", "format_mode": "", "age_category": "21+",
+      "category_slug": "stem",
+      "description_en": "A fellowship supporting outstanding PhD students in machine learning and AI research.",
+      "description_uz": "Mashinali o'qitish va sun'iy intellekt sohasidagi iqtidorli PhD talabalarini qo'llab-quvvatlovchi grant.",
+      "benefits_en": ["Tuition and a research stipend", "Mentorship from Google researchers", "Conference and travel support"],
+      "benefits_uz": ["O'qish to'lovi va tadqiqot stipendiyasi", "Google tadqiqotchilaridan mentorlik", "Konferensiya va sayohat yordami"],
+      "deadline": "2026-09-30",
+      "url": "https://research.google/",
+      "extra_links": []
+    },
+    {
+      "title_en": "Schwarzman Scholars",
+      "title_uz": "Schwarzman Scholars",
+      "country": "Xitoy", "flag": "🇨🇳",
+      "funding_level": "full", "format_mode": "", "age_category": "18-28",
+      "category_slug": "social",
+      "description_en": "A fully funded one-year master's in Global Affairs at Tsinghua University, Beijing.",
+      "description_uz": "Pekindagi Tsinghua universitetida Global Affairs bo'yicha bir yillik to'liq moliyalashtirilgan magistratura.",
+      "benefits_en": ["Full tuition, room, and board", "Travel and a personal stipend", "Leadership and networking program"],
+      "benefits_uz": ["O'qish, turar joy va ovqatlanish to'liq", "Yo'l xarajati va shaxsiy stipendiya", "Liderlik va networking dasturi"],
+      "deadline": "2026-09-24",
+      "url": "https://www.schwarzmanscholars.org/",
+      "extra_links": []
+    },
+    {
+      "title_en": "Knight-Hennessy Scholars (Stanford)",
+      "title_uz": "Knight-Hennessy Scholars (Stanford)",
+      "country": "AQSh", "flag": "🇺🇸",
+      "funding_level": "full", "format_mode": "", "age_category": "21+",
+      "category_slug": "research",
+      "description_en": "Full funding for any graduate degree at Stanford University, across all disciplines.",
+      "description_uz": "Stanford universitetida istalgan yo'nalishdagi magistratura/aspirantura uchun to'liq moliyalashtirish.",
+      "benefits_en": ["Tuition, stipend, and travel", "Membership in a multidisciplinary cohort", "Leadership development program"],
+      "benefits_uz": ["O'qish to'lovi, stipendiya va yo'l", "Fanlararo jamoaga a'zolik", "Liderlikni rivojlantirish dasturi"],
+      "deadline": "2026-10-08",
+      "url": "https://knight-hennessy.stanford.edu/",
+      "extra_links": []
+    },
+    {
+      "title_en": "MEXT Scholarship (Japan)",
+      "title_uz": "MEXT stipendiyasi (Yaponiya)",
+      "country": "Yaponiya", "flag": "🇯🇵",
+      "funding_level": "full", "format_mode": "", "age_category": "17-34",
+      "category_slug": "stem",
+      "description_en": "A Japanese government scholarship for undergraduate, master's, and PhD study in Japan.",
+      "description_uz": "Yaponiyada bakalavr, magistratura va PhD uchun Yaponiya hukumati stipendiyasi.",
+      "benefits_en": ["Full tuition coverage", "Monthly living stipend", "Round-trip airfare to Japan"],
+      "benefits_uz": ["O'qish to'lovi to'liq qoplanadi", "Oylik yashash stipendiyasi", "Yaponiyaga borib-kelish chiptasi"],
+      "deadline": "2026-05-31",
+      "url": "https://www.studyinjapan.go.jp/en/",
+      "extra_links": []
+    }
+  ],
+  "faqs": [
+    {
+      "question_en": "What documents do I usually need for a scholarship application?",
+      "answer_en": "Most scholarships require: a CV/resume, academic transcripts, a motivation/personal statement, 2-3 reference letters, proof of English proficiency (IELTS/TOEFL), and a copy of your passport. Always check the specific program's checklist.",
+      "question_uz": "Stipendiyaga ariza topshirish uchun odatda qanday hujjatlar kerak?",
+      "answer_uz": "Ko'pchilik stipendiyalar uchun kerak bo'ladi: CV/rezyume, akademik transkript, motivatsion xat, 2-3 ta tavsiyanoma, ingliz tili sertifikati (IELTS/TOEFL) va pasport nusxasi. Har doim aniq dasturning ro'yxatini tekshiring.",
+      "keywords": "documents required cv transcript motivation reference letters passport hujjatlar",
+      "category": "application"
+    },
+    {
+      "question_en": "What is a motivation letter and how do I write a good one?",
+      "answer_en": "A motivation letter explains why you want the scholarship, what makes you a strong fit, and how it connects to your goals. Be specific and honest: tell a real story, link your past to your future plans, and avoid generic phrases. Keep it to about one page.",
+      "question_uz": "Motivatsion xat nima va uni qanday yozish kerak?",
+      "answer_uz": "Motivatsion xat nega aynan shu stipendiyani xohlashingizni, nega mos nomzod ekanligingizni va u maqsadlaringizga qanday bog'lanishini tushuntiradi. Aniq va halol bo'ling: haqiqiy hikoya ayting, o'tmishingizni kelajak rejalaringizga bog'lang, umumiy iboralardan qoching. Taxminan bir bet hajmida.",
+      "keywords": "motivation letter personal statement essay write motivatsion xat",
+      "category": "application"
+    },
+    {
+      "question_en": "Do I need IELTS or TOEFL?",
+      "answer_en": "Most English-language programs require proof of English. IELTS and TOEFL are the most widely accepted. Required scores vary, but many master's programs ask for IELTS 6.5-7.0. Some programs waive it if you studied in English before.",
+      "question_uz": "Menga IELTS yoki TOEFL kerakmi?",
+      "answer_uz": "Ingliz tilidagi ko'pchilik dasturlar til sertifikatini talab qiladi. IELTS va TOEFL eng keng tarqalgani. Talab qilinadigan ball farq qiladi, lekin ko'p magistratura dasturlari IELTS 6.5-7.0 so'raydi. Ba'zi dasturlar avval ingliz tilida o'qigan bo'lsangiz, undan voz kechadi.",
+      "keywords": "ielts toefl english test language requirement til sertifikat",
+      "category": "eligibility"
+    },
+    {
+      "question_en": "Are these scholarships fully funded?",
+      "answer_en": "It depends. 'Fully funded' usually means tuition, a living stipend, and sometimes travel and insurance are covered. 'Partial' scholarships cover only part of the cost. Always read the funding section of each grant carefully.",
+      "question_uz": "Bu stipendiyalar to'liq moliyalashtiriladimi?",
+      "answer_uz": "Bu dasturga bog'liq. 'To'liq moliyalashtirilgan' odatda o'qish to'lovi, yashash stipendiyasi, ba'zan yo'l va sug'urtani qoplaydi. 'Qisman' stipendiyalar xarajatning faqat bir qismini qoplaydi. Har bir grantning moliyalashtirish qismini diqqat bilan o'qing.",
+      "keywords": "fully funded partial funding cost tuition stipend moliyalashtirish",
+      "category": "funding"
+    },
+    {
+      "question_en": "Can I apply to more than one scholarship at the same time?",
+      "answer_en": "Yes, and you usually should. Applying to several increases your chances. Just track each deadline carefully and tailor your essays to each program rather than sending one generic version.",
+      "question_uz": "Bir vaqtning o'zida bir nechta stipendiyaga ariza topshira olamanmi?",
+      "answer_uz": "Ha, va odatda topshirganingiz ma'qul. Bir nechtasiga topshirish imkoniyatingizni oshiradi. Faqat har bir muddatni diqqat bilan kuzating va esselaringizni har bir dasturga moslang, bitta umumiy nusxa yubormang.",
+      "keywords": "multiple apply several deadlines chances bir nechta ariza",
+      "category": "application"
+    },
+    {
+      "question_en": "When should I start preparing my application?",
+      "answer_en": "Start 6-12 months before the deadline. Language tests, reference letters, and strong essays all take time. Early preparation also gives you room to apply to several programs without rushing.",
+      "question_uz": "Arizamni qachondan tayyorlay boshlashim kerak?",
+      "answer_uz": "Muddatdan 6-12 oy oldin boshlang. Til imtihonlari, tavsiyanomalar va kuchli esselar vaqt talab qiladi. Erta tayyorgarlik bir nechta dasturga shoshilmasdan ariza topshirishga imkon beradi.",
+      "keywords": "when start preparing timeline deadline plan qachon tayyorlash",
+      "category": "application"
+    },
+    {
+      "question_en": "How do reference letters work?",
+      "answer_en": "Most programs ask for 1-3 letters from people who know your academic or professional work well, like professors or supervisors. Ask them early, share your CV and goals, and give them at least 3-4 weeks before the deadline.",
+      "question_uz": "Tavsiyanomalar qanday ishlaydi?",
+      "answer_uz": "Ko'pchilik dasturlar sizning akademik yoki professional ishingizni yaxshi biladigan kishilardan (professorlar, rahbarlar) 1-3 ta xat so'raydi. Ulardan oldindan so'rang, CV va maqsadlaringizni ulashing, muddatdan kamida 3-4 hafta oldin bering.",
+      "keywords": "reference recommendation letters professor supervisor tavsiyanoma",
+      "category": "application"
+    },
+    {
+      "question_en": "Do I need work experience to apply?",
+      "answer_en": "It varies. Some scholarships (like Chevening or Humphrey) require 1-5+ years of experience. Others, especially for fresh graduates, do not. Check the eligibility section of each grant.",
+      "question_uz": "Ariza topshirish uchun ish tajribasi kerakmi?",
+      "answer_uz": "Bu farq qiladi. Ba'zi stipendiyalar (masalan Chevening yoki Humphrey) 1-5+ yillik tajriba talab qiladi. Boshqalari, ayniqsa yangi bitiruvchilar uchun, talab qilmaydi. Har bir grantning shartlar bo'limini tekshiring.",
+      "keywords": "work experience required eligibility years ish tajriba",
+      "category": "eligibility"
+    },
+    {
+      "question_en": "What is GrantBek and what can it do?",
+      "answer_en": "GrantBek is a bot that helps you discover educational grants and scholarships, answers common questions about applications, and can suggest grants matching your field, country, and funding needs. Try /search, /categories, or /deadlines.",
+      "question_uz": "GrantBek nima va u nima qila oladi?",
+      "answer_uz": "GrantBek ta'lim grantlari va stipendiyalarni topishga yordam beradigan, ariza bo'yicha savollarga javob beradigan va yo'nalishingiz, mamlakat hamda moliya ehtiyojingizga mos grantlarni taklif qiladigan botdir. /search, /categories yoki /deadlines ni sinab ko'ring.",
+      "keywords": "what grantbek about help bot features nima yordam",
+      "category": "general"
+    },
+    {
+      "question_en": "Is there an application fee?",
+      "answer_en": "Most reputable scholarships are free to apply for. Be cautious of any program asking you to pay a fee to apply or to 'guarantee' a result — that is a common scam.",
+      "question_uz": "Ariza to'lovi bormi?",
+      "answer_uz": "Obro'li stipendiyalarning aksariyatiga ariza topshirish bepul. Ariza uchun to'lov so'raydigan yoki natijani 'kafolatlaydigan' dasturlardan ehtiyot bo'ling — bu ko'p uchraydigan firibgarlik.",
+      "keywords": "application fee cost free scam pay to'lov firibgarlik",
+      "category": "funding"
+    },
+    {
+      "question_en": "Can I apply if my GPA is not very high?",
+      "answer_en": "Often yes. Many scholarships look at the whole person: leadership, impact, essays, and references — not just grades. A strong story and clear goals can outweigh an average GPA. Read each program's criteria.",
+      "question_uz": "GPA juda yuqori bo'lmasa ham ariza topshira olamanmi?",
+      "answer_uz": "Ko'pincha ha. Ko'p stipendiyalar butun shaxsga qaraydi: liderlik, ta'sir, esselar va tavsiyalar — faqat baholarga emas. Kuchli hikoya va aniq maqsadlar o'rtacha GPA dan ustun kelishi mumkin. Har bir dasturning mezonlarini o'qing.",
+      "keywords": "gpa grades low average requirement marks baho",
+      "category": "eligibility"
+    },
+    {
+      "question_en": "How do I track scholarship deadlines?",
+      "answer_en": "Use the /deadlines command to see grants with upcoming deadlines. It's smart to keep your own calendar too, working backwards from each deadline to plan when to request references and finish essays.",
+      "question_uz": "Stipendiya muddatlarini qanday kuzataman?",
+      "answer_uz": "Yaqinlashayotgan muddatli grantlarni ko'rish uchun /deadlines buyrug'idan foydalaning. Shaxsiy taqvim yuritish ham foydali — har bir muddatdan orqaga hisoblab, tavsiya so'rash va esse yozish vaqtini rejalashtiring.",
+      "keywords": "deadlines track calendar dates upcoming muddat kuzatish",
+      "category": "general"
+    }
+  ]
+}
