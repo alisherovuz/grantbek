@@ -1,0 +1,11 @@
+# Never ship secrets or local state into the image (Railway reads its own Variables)
+.env
+.venv/
+venv/
+data/
+tests/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.session
+*.zip

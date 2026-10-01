@@ -1,0 +1,48 @@
+# Dropdown values of the edugrants.uz admin "Create Extracurriculars" form.
+# The AI must pick ONLY from these lists, so they have to match the admin panel exactly.
+# TODO(Nurbek): replace each list with the exact options from Filament (copy them from the
+# form's select options or the enum/config in the Laravel code).
+
+imkoniyat_turi:        # Imkoniyat turi
+  - Grant
+  - Stipendiya
+  - Almashinuv dasturi
+  - Yozgi maktab
+  - Tanlov
+  - Olimpiada
+  - Konferensiya
+  - Forum
+  - Fellowship
+  - Amaliyot
+  - Kurs
+  - Volontyorlik
+  - Boshqa
+
+daraja:                # Daraja
+  - Maktab o'quvchilari
+  - Bakalavr
+  - Magistratura
+  - Doktorantura
+  - Yosh mutaxassislar
+  - Barcha darajalar
+
+moliyalashtirish:      # Moliyalashtirish
+  - To'liq
+  - Qisman
+  - Moliyalashtirilmaydi
+
+format:                # Format
+  - Oflayn
+  - Onlayn
+  - Gibrid
+
+davomiylik:            # Davomiylik
+  - 1 haftagacha
+  - 1-4 hafta
+  - 1-6 oy
+  - 6-12 oy
+  - 1 yildan ortiq
+
+ariza_tolovi:          # Ariza to'lovi
+  - Bepul
+  - Pullik

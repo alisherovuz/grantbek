@@ -1,0 +1,191 @@
+# EduGrants agent: where to look for opportunities.
+#
+# This file IS the fix for "the agent can't find grants". Instead of asking an AI to
+# search the web, the agent reads these sources on a schedule. To find more grants,
+# add more sources here. `/health` in the bot shows which ones are working.
+#
+# Types:
+#   rss         - an aggregator's RSS feed (checked 2026-09-30, see notes)
+#   page_watch  - an official programme page; re-checked every `every_hours`, and when its
+#                 text changes (new intake, new deadline) it is researched again
+#   telegram    - public Telegram channels, read with a user session (needs TG_API_ID/HASH)
+#   imap        - a Gmail inbox you subscribe to opportunity newsletters (needs IMAP_*)
+
+audience: |
+  EduGrants (@EduGrandsUz, ~31,000 subscribers) posts opportunities for young people in Uzbekistan.
+  The hard rules are added automatically from .env (by default: Uzbeks can apply, no application fee).
+  WHAT WE LIKE MOST: international competitions and olympiads for school pupils (13-18), free online
+  programmes from top universities and organisations, fully funded summer schools, forums,
+  exchanges and scholarships, and opportunities inside Uzbekistan (camps, national contests,
+  stipends), which get the most reactions. Recognisable names and clear benefits score highest.
+  Many candidates come from Russian-language channels: judge them the same way. Russian domestic
+  contests open to CIS or all countries are fine; ones only for Russian citizens or residents are not.
+
+# Titles containing these words are dropped before any AI call (saves money)
+skip_title_keywords:
+  - is hiring
+  - "we're hiring"
+  - call for papers
+  - call for abstracts
+  - call for chapters
+  - research roles
+  - postdoc
+  - predoctoral
+  - doctoral program
+  - вакансия
+  - вакансии
+  - "работа в "
+  - для граждан рф
+  - для жителей москвы
+  - розыгрыш
+  - реклама
+  - cabin crew
+  - job vacancy
+  - vacancies
+  - "jobs 20"
+  - "jobs in "
+  - for lagos
+  - for nigerians
+  - for kenyans
+  - for ghanaians
+  - for us citizens
+  - for canadian citizens
+  - for afghan
+  - municipal
+  - webinar series
+
+# Sites that only republish others' grants (never treated as the "official" page)
+extra_aggregator_domains: []
+
+sources:
+  # ---------------------------------------------------------------- the channel's own history
+  # Programmes you posted in earlier years, re-checked around the same time of year.
+  # Needs: python -m edugrants_agent import-history messages.html
+  - name: channel-history
+    type: history_watch
+    days_before: 75            # start watching 75 days before last year's posting date
+    days_after: 45             # ...until 45 days after it
+    every_hours: 24
+    max_per_run: 80            # pages checked per search
+    max_candidates: 5          # at most this many old programmes per search, so new finds come first
+
+  # ---------------------------------------------------------------- aggregators (RSS)
+  # All checked on 30 Sep - 1 Oct 2026. Volumes are new items per day, roughly.
+  - name: opportunitydesk
+    type: rss
+    url: https://opportunitydesk.org/feed/
+    max_age_days: 3            # ~10/day, global, mixed levels
+  - name: opportunitiesforyouth
+    type: rss
+    url: https://opportunitiesforyouth.org/feed/
+    max_age_days: 3            # ~5/day, full article text in the feed
+  - name: opportunitiescorners
+    type: rss
+    url: https://opportunitiescorners.com/feed/
+    max_age_days: 3            # ~1/day, youth forums and summits
+  - name: opportunitiescircle
+    type: rss
+    url: https://opportunitiescircle.com/feed/
+    enabled: false             # Cloudflare blocks automated readers (1 Oct 2026)
+    max_age_days: 3            # ~3/day, scholarships, fellowships, youth awards
+  - name: globalsouthopportunities
+    type: rss
+    url: https://globalsouthopportunities.com/feed/
+    enabled: false             # Cloudflare blocks automated readers (1 Oct 2026)
+    max_age_days: 3            # ~8/day, scholarships, winter schools; some jobs (filtered)
+  - name: oyaop
+    type: rss
+    url: https://oyaop.com/feed/
+    max_age_days: 3            # ~3/day, mostly fully funded; Africa-only ones are dropped at triage
+  - name: brightscholarship
+    type: rss
+    url: https://brightscholarship.com/feed/
+    max_age_days: 3            # ~6/day, English, scholarships and funded programmes (checked 1 Oct 2026)
+  - name: opportunitiesforafricans
+    type: rss
+    url: https://www.opportunitiesforafricans.com/feed/
+    max_age_days: 3            # ~10/day; many are global (NVIDIA, Dalai Lama Fellowship), Africa-only ones get dropped
+  - name: grantlar.uz
+    type: rss
+    role: competitor           # an Uzbek competitor: tracked for the "already posted?" check, not a source
+    url: https://grantlar.uz/feed/
+    max_age_days: 45
+  - name: mladiinfo
+    type: rss
+    url: https://mladiinfo.eu/feed/
+    max_age_days: 30           # quiet: a few posts a month, none since August on 1 Oct 2026
+  - name: scholars4dev
+    type: rss
+    url: https://www.scholars4dev.com/feed/
+    max_age_days: 21
+    enabled: false             # feed responded but had no items on 2026-09-30; re-enable if it recovers
+  - name: fundsforngos
+    type: rss
+    url: https://www2.fundsforngos.org/feed/
+    max_age_days: 5
+    enabled: false             # works, but mostly grants for organisations, not students
+  # Checked and NOT usable: youthop.com (no feed), afterschoolafrica.com (blocks bots),
+  # scholarshipsads.com (no feed), youthopportunitieshub.com (site down),
+  # scholarship-positions.com (feed redirects to an unrelated site), profellow.com (articles, not listings)
+
+  # ---------------------------------------------------------------- official pages of recurring programmes
+  # Add every programme you post every year. Check /health after the first run: a red line
+  # means the URL moved and needs updating.
+  - {name: chevening, type: page_watch, title: Chevening Scholarships, url: "https://www.chevening.org/scholarships/", every_hours: 24}
+  - {name: stipendium-hungaricum, type: page_watch, title: Stipendium Hungaricum, url: "https://stipendiumhungaricum.hu/", every_hours: 24}
+  - {name: turkiye-burslari, type: page_watch, title: Türkiye Bursları, url: "https://www.turkiyeburslari.gov.tr/", every_hours: 24}
+  - {name: gks-korea, type: page_watch, title: Global Korea Scholarship, url: "https://www.studyinkorea.go.kr/", every_hours: 24}
+  - {name: daad, type: page_watch, title: DAAD Scholarships, url: "https://www.daad.de/en/study-and-research-in-germany/scholarships/", every_hours: 24}
+  - {name: yygs, type: page_watch, title: Yale Young Global Scholars, url: "https://globalscholars.yale.edu/", every_hours: 24}
+  - {name: erasmus-mundus, type: page_watch, title: Erasmus Mundus Joint Masters, url: "https://www.eacea.ec.europa.eu/scholarships/erasmus-mundus-catalogue_en", every_hours: 48}
+  - {name: el-yurt-umidi, type: page_watch, title: El-yurt umidi jamg'armasi, url: "https://eyuf.uz/", every_hours: 24}
+  # TODO(Nurbek): add FLEX, UWC (Uzbekistan committee), UGRAD, JACAFA and your other yearly programmes.
+
+  # ---------------------------------------------------------------- Telegram
+  # Needs TG_API_ID, TG_API_HASH and TG_STRING_SESSION (run: python -m edugrants_agent tg-login).
+  # Everything is checked once a day (RUN_AT). `fast: true` sources are also checked every
+  # FAST_EVERY_MINUTES if you turn that on (off by default).
+
+  # International channels you translate from. Checked 1 Oct 2026; all in Russian.
+  - name: tg-international
+    type: telegram
+    role: source
+    fast: true
+    max_age_days: 2            # first run looks back 2 days; after that, everything since the last check
+    limit: 50
+    channels:
+      - "@grantscholar"        # Гранты/Стипендии, 45.8K, several a day, links to official pages
+      - "@studygrants"         # StudyGrants, 38K, 2-3 a day; many Russia-only (dropped by the rules)
+      - "@check_opportunities" # Возможности в устойчивом развитии, 22.9K; last post 5 Jul, may be inactive
+      - "@school_grants"       # Гранты и конкурсы для школьников, 5.3K, 5-10 a day, school contests
+      - "@edu_traveler"        # EduTraveler, 30.7K, 1-2 a day but mostly its own ads and IELTS
+      - "@scholarships365"     # Scholarships365, 117K, English, 10-15 a day (added 1 Oct 2026)
+      # @opportunity_ladder and @grantinum: Telegram says these usernames don't exist (1 Oct 2026)
+
+  # Other Uzbek channels. Not used as sources: only so each card can say whether
+  # someone already posted it ("🥇 O'zbek kanallarida hali yo'q" or "⚠️ @x 3 soat oldin joylagan").
+  - name: tg-competitors
+    type: telegram
+    role: competitor
+    fast: true
+    max_age_days: 45
+    limit: 200
+    channels:
+      - "@grantgouz"           # GrantGO, 45.8K
+      # TODO(Nurbek): add the other Uzbek opportunity channels you race against
+
+  # Your own channel: anything you post (even by hand) is marked as posted automatically.
+  - name: tg-own
+    type: telegram
+    role: own
+    fast: true
+    max_age_days: 7
+    channels:
+      - "@EduGrandsUz"
+
+  # ---------------------------------------------------------------- newsletter inbox (optional)
+  - name: newsletters
+    type: imap
+    enabled: false             # create a Gmail for this, enable IMAP + app password, subscribe it to newsletters
+    folder: INBOX
+    limit: 30
