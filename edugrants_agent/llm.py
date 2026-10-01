@@ -92,7 +92,7 @@ EXTRACT_TOOL = {
             "application_process": {"type": "string"},
             "registration_url": {"type": ["string", "null"]},
             "verified_from_official": {"type": "boolean", "description": "True only if deadline and eligibility were read from SOURCE A (the organiser's page)."},
-            "conflicts": {"type": ["string", "null"], "description": "Where SOURCE A and SOURCE B disagree, if anywhere."},
+            "conflicts": {"type": ["string", "null"], "description": "Only if the sources disagree on something that matters (deadline, eligibility, funding): ONE short sentence in Uzbek, saying 'rasmiy sahifa' and 'agregator' instead of SOURCE A/B. Otherwise null."},
             "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
         },
         "required": ["is_opportunity", "title", "organizer", "host_country", "host_country_iso2", "opportunity_type",
@@ -232,6 +232,9 @@ class LLM:
               "audience recognises or would be proud to put on a CV? Is the benefit concrete and attractive? "
               "Is it for school or bachelor students? A small essay contest from an unknown site, or a "
               "fellowship for researchers or professionals, is a 2 even if it is free and open to Uzbeks. "
+              "Programmes ONLY for master's or PhD students are rare on the channel (16 master's and 0 PhD "
+              "of 850 posts): give them 2, unless it is a world-famous fully funded name such as Chevening, "
+              "Erasmus Mundus, DAAD, Fulbright, Stipendium Hungaricum or Global Korea Scholarship: then 5. "
               "When unsure about a hard rule, keep it: the organiser's page is checked next."
         )
         user = "Candidates:\n" + json.dumps(items, ensure_ascii=False, indent=1)

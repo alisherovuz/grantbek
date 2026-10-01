@@ -20,7 +20,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .config import settings
 from .db import DB
-from .pipeline import AGGREGATOR_DOMAINS, Pipeline, format_gaps
+from .pipeline import AGGREGATOR_DOMAINS, Pipeline, format_gaps, level_reason
 from .publish import push_to_platform
 from .render import finder_card, uz_date
 
@@ -119,6 +119,10 @@ def ordered_finds(limit: int | None = None) -> list[tuple]:
         if gaps:   # finds queued before the format check existed
             db().update(r["id"], status="rejected", reason=f"post format: {', '.join(gaps)}")
             continue
+        lvl = level_reason(json.loads(r["data_json"] or "{}"), r["fit_score"])
+        if lvl:    # queued before the master's rule existed
+            db().update(r["id"], status="rejected", reason=lvl)
+            continue
         text, taken = finder_card(db(), r)
         cards.append((taken, 1 if r["history_id"] else 0, -(r["fit_score"] or 0),
                       -(datetime.strptime(r["published_at"][:19], "%Y-%m-%d %H:%M:%S").timestamp()
@@ -127,72 +131,124 @@ def ordered_finds(limit: int | None = None) -> list[tuple]:
     return [(c[5], c[6]) for c in cards[:limit]]
 
 
-MORE_TEXT = "➕ Yana 5 ta"
+# ---------------------------------------------------------------- the browser
+# All waiting finds live in ONE message: ⬅️ Oldingisi / Keyingisi ➡️ flip through them, ✅ Olamiz and
+# ❌ Kerak emas act on the one on screen and move on to the next. Nothing is stored about the message
+# itself: every button carries the id of a find, and the order is rebuilt from the database.
+BROWSE_TEXT = "🗂 Topilmalar"
+OLD_MORE_TEXT = "➕ Yana 5 ta"   # the bottom button before the browser existed
 
 
-def more_markup() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=MORE_TEXT, callback_data="more")]])
+def browser_view(item_id: int | None = None, index: int = 0, note: str = "") -> tuple[str, InlineKeyboardMarkup]:
+    """Text and buttons showing one find: `item_id` if it is still waiting, otherwise the one at `index`."""
+    finds = ordered_finds()
+    if not finds:
+        return ((note + "\n\n" if note else "") + f"📭 Navbatda topilma yo'q. Yangilarini qidirish uchun «{SEARCH_TEXT}».",
+                panel_markup())
+    ids = [item["id"] for item, _ in finds]
+    i = ids.index(item_id) if item_id in ids else min(max(index, 0), len(ids) - 1)
+    item, card = finds[i]
+    n = len(ids)
+    head = (note + "\n\n" if note else "") + f"🗂 <b>Topilma {i + 1} / {n}</b>\n\n"
+    nav = [InlineKeyboardButton(text="⬅️ Oldingisi", callback_data=f"b:go:{ids[(i - 1) % n]}"),
+           InlineKeyboardButton(text=f"{i + 1}/{n}", callback_data="noop"),
+           InlineKeyboardButton(text="Keyingisi ➡️", callback_data=f"b:go:{ids[(i + 1) % n]}")]
+    act = [InlineKeyboardButton(text="✅ Olamiz", callback_data=f"b:ok:{item['id']}"),
+           InlineKeyboardButton(text="❌ Kerak emas", callback_data=f"b:no:{item['id']}")]
+    return head + card, InlineKeyboardMarkup(inline_keyboard=[nav, act] if n > 1 else [act])
 
 
-async def push_finds(bot: Bot, n: int | None = None) -> tuple[int, int]:
-    """Sends the best `n` waiting finds (5 by default). Returns (sent, still waiting)."""
-    if not settings.admin_chat_id:
-        return 0, 0
-    async with STATE["push_lock"]:   # two quick presses must not send the same cards twice
-        queue = ordered_finds()
-        batch = queue[: n or settings.cards_per_batch]
-        sent = 0
-        for item, text in batch:
-            try:
-                msg = await bot.send_message(settings.admin_chat_id, text, reply_markup=find_keyboard(item["id"]))
-                db().update(item["id"], status="shown", review_message_id=msg.message_id)
-                sent += 1
-            except Exception as e:
-                log.error("could not send find #%d: %s", item["id"], e)
-            await asyncio.sleep(1.2)
-        return sent, len(queue) - len(batch)
+def queue_index(item_id: int) -> int:
+    ids = [item["id"] for item, _ in ordered_finds()]
+    return ids.index(item_id) if item_id in ids else 0
 
 
-def waiting_line(left: int) -> str:
-    return (f"📦 Navbatda yana {left} ta topilma bor. Ko'rish uchun «{MORE_TEXT}» ni bosing."
-            if left else "📭 Navbatda boshqa topilma yo'q.")
+async def show_in(message: Message, item_id: int | None = None, index: int = 0, note: str = "") -> None:
+    text, kb = browser_view(item_id, index, note)
+    try:
+        await message.edit_text(text, reply_markup=kb)
+    except Exception as e:   # "message is not modified" when two people press at once
+        if "not modified" not in str(e):
+            raise
 
 
-async def send_more(bot: Bot, chat_id: int, user_id: int) -> None:
-    if not allowed(user_id):
-        await bot.send_message(chat_id, "Ruxsat yo'q.")
-        return
-    sent, left = await push_finds(bot)
-    if not sent:
-        await bot.send_message(chat_id, f"📭 Navbatda topilma qolmadi. Yangilarini qidirish uchun «{SEARCH_TEXT}».",
-                               reply_markup=panel_markup())
-        return
-    await bot.send_message(chat_id, waiting_line(left), reply_markup=more_markup() if left else panel_markup())
+async def open_browser(bot: Bot, chat_id: int, note: str = "") -> None:
+    text, kb = browser_view(note=note)
+    await bot.send_message(chat_id, text, reply_markup=kb)
 
 
-async def run_cycle(bot: Bot, notify: bool = False, fast_only: bool = False, manual: bool = False) -> str:
+@router.callback_query(F.data.startswith("b:go:"))
+async def on_browse(cb: CallbackQuery):
+    await cb.answer()
+    await show_in(cb.message, int(cb.data.split(":")[2]))
+
+
+@router.callback_query(F.data.startswith("b:ok:"))
+async def on_browse_take(cb: CallbackQuery, bot: Bot):
+    if not allowed(cb.from_user.id):
+        return await cb.answer("Ruxsat yo'q", show_alert=True)
+    item_id = int(cb.data.split(":")[2])
+    item = db().get(item_id)
+    if not item or item["status"] != "extracted":
+        await cb.answer("Buni boshqa muharrir allaqachon ko'rib chiqdi")
+        return await show_in(cb.message)
+    i = queue_index(item_id)
+    take(item, cb.from_user.id)
+    await cb.answer("✅ Olindi" + (", post yozilmoqda" if settings.write_on_accept else ""))
+    await show_in(cb.message, index=i)   # the next find slides into this place
+    if settings.write_on_accept:
+        await write_and_send(bot, item_id, cb.message.chat.id, by=cb.from_user.first_name)
+
+
+@router.callback_query(F.data.startswith("b:no:"))
+async def on_browse_skip(cb: CallbackQuery):
+    if not allowed(cb.from_user.id):
+        return await cb.answer("Ruxsat yo'q", show_alert=True)
+    item_id = int(cb.data.split(":")[2])
+    buttons = [InlineKeyboardButton(text=label, callback_data=f"b:nr:{item_id}:{code}")
+               for code, label in SKIP_REASONS.items()]
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([InlineKeyboardButton(text="↩️ Orqaga", callback_data=f"b:go:{item_id}")])
+    await cb.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await cb.answer("Sababini tanlang, agent bundan o'rganadi")
+
+
+@router.callback_query(F.data.startswith("b:nr:"))
+async def on_browse_skip_reason(cb: CallbackQuery):
+    if not allowed(cb.from_user.id):
+        return await cb.answer("Ruxsat yo'q", show_alert=True)
+    _, _, item_id, code = cb.data.split(":")
+    item_id = int(item_id)
+    i = queue_index(item_id)
+    item = db().get(item_id)
+    if item and item["status"] == "extracted":
+        db().update(item_id, status="skipped", reason=SKIP_REASONS.get(code, code).split(" ", 1)[1])
+    await cb.answer("❌ O'tkazib yuborildi")
+    await show_in(cb.message, index=i)
+
+
+async def run_cycle(bot: Bot, notify: bool = False, fast_only: bool = False, manual: bool = False,
+                    status: Message | None = None) -> str:
+    """Searches, then shows the finds in one browser message (`status` is turned into it, if given)."""
     if STATE["lock"].locked():
         return "⏳ Qidiruv allaqachon ketmoqda, tugashini kuting."
     async with STATE["lock"]:
         result = await asyncio.to_thread(STATE["pipeline"].run, fast_only)
-        if settings.mode == "finder":
-            sent, left = await push_finds(bot)
-        else:
-            sent, left = await push_drafts(bot), 0
+        sent = await push_drafts(bot) if settings.mode != "finder" else 0
     seen = result["added"]
-    total = sent + left
-    found = (f"{seen} ta yangi e'lon ko'rildi, {total} ta mos topilma navbatda. "
-             f"Eng yaxshi {sent} tasi yuborildi." if sent else
-             f"{seen} ta yangi e'lon ko'rildi, mos keladigan yangisi yo'q.")
-    if left:
-        found += f"\n{waiting_line(left)}"
-    if manual:
-        return "✅ Qidiruv tugadi: " + found
-    if not notify or (fast_only and sent == 0):
+    waiting = len(ordered_finds()) if settings.mode == "finder" else sent
+    head = "✅ Qidiruv tugadi" if manual else "☀️ Bugungi qidiruv"
+    note = (f"{head}: {seen} ta yangi e'lon ko'rildi, {waiting} ta mos topilma navbatda."
+            if waiting else f"{head}: {seen} ta yangi e'lon ko'rildi, mos keladigan yangisi yo'q.")
+    if settings.mode != "finder" or not settings.admin_chat_id:
+        return note
+    if not manual and (not notify or (fast_only and waiting == 0)):
         return ""
-    text = "☀️ Bugungi qidiruv: " + found
-    await bot.send_message(settings.admin_chat_id, text, reply_markup=more_markup() if left else panel_markup())
-    return text
+    if status is not None:
+        await show_in(status, note=note)
+    else:
+        await open_browser(bot, settings.admin_chat_id, note=note)
+    return note
 
 
 # ---------------------------------------------------------------- the search button
@@ -202,7 +258,7 @@ STATS_TEXT = "📊 Statistika"
 
 def main_keyboard() -> ReplyKeyboardMarkup:
     """Always-visible buttons at the bottom of the chat."""
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=SEARCH_TEXT), KeyboardButton(text=MORE_TEXT)],
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=SEARCH_TEXT), KeyboardButton(text=BROWSE_TEXT)],
                                          [KeyboardButton(text=STATS_TEXT)]],
                                resize_keyboard=True, is_persistent=True)
 
@@ -210,7 +266,7 @@ def main_keyboard() -> ReplyKeyboardMarkup:
 def panel_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text=SEARCH_TEXT, callback_data="search"),
-        InlineKeyboardButton(text=MORE_TEXT, callback_data="more"),
+        InlineKeyboardButton(text=BROWSE_TEXT, callback_data="more"),
     ], [InlineKeyboardButton(text=STATS_TEXT, callback_data="stats")]])
 
 
@@ -221,13 +277,14 @@ async def manual_search(bot: Bot, chat_id: int, user_id: int) -> None:
     if STATE["lock"].locked():
         await bot.send_message(chat_id, "⏳ Qidiruv allaqachon ketmoqda, tugashini kuting.")
         return
-    status = await bot.send_message(chat_id, "🔎 Qidirilmoqda... odatda 2-5 daqiqa. Topilganlar guruhga keladi.")
+    status = await bot.send_message(chat_id, "🔎 Qidirilmoqda... odatda 2-5 daqiqa. Topilganlar shu xabarda chiqadi.")
     try:
-        text = await run_cycle(bot, manual=True)
+        text = await run_cycle(bot, manual=True, status=status)
+        if text.startswith("⏳"):
+            await status.edit_text(text, reply_markup=panel_markup())
     except Exception as e:
         log.exception("manual search failed")
-        text = f"❌ Qidiruvda xato: {escape(str(e))[:300]}"
-    await status.edit_text(text, reply_markup=more_markup() if "📦" in text else panel_markup())
+        await status.edit_text(f"❌ Qidiruvda xato: {escape(str(e))[:300]}", reply_markup=panel_markup())
 
 
 @router.message(F.text == SEARCH_TEXT)
@@ -241,20 +298,18 @@ async def on_search_inline(cb: CallbackQuery, bot: Bot):
     await manual_search(bot, cb.message.chat.id, cb.from_user.id)
 
 
-@router.message(F.text == MORE_TEXT)
-@router.message(Command("more"))
-async def on_more_button(m: Message, bot: Bot):
-    await send_more(bot, m.chat.id, m.from_user.id)
+@router.message(F.text.in_({BROWSE_TEXT, OLD_MORE_TEXT}))
+@router.message(Command("more", "list"))
+async def on_browse_button(m: Message, bot: Bot):
+    if allowed(m.from_user.id):
+        await open_browser(bot, m.chat.id)
 
 
 @router.callback_query(F.data == "more")
-async def on_more_inline(cb: CallbackQuery, bot: Bot):
+async def on_browse_inline(cb: CallbackQuery, bot: Bot):
     await cb.answer()
-    try:   # the old "more" button has done its job
-        await cb.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-    await send_more(bot, cb.message.chat.id, cb.from_user.id)
+    if allowed(cb.from_user.id):
+        await open_browser(bot, cb.message.chat.id)
 
 
 @router.message(F.text == STATS_TEXT)
@@ -280,27 +335,33 @@ async def cmd_panel(m: Message, bot: Bot):
     await m.answer("Pastdagi tugmalar ham doim turadi 👇", reply_markup=main_keyboard())
 
 
+def take(item, user_id: int) -> None:
+    """Marks a find as taken, so it is never suggested again."""
+    data = json.loads(item["data_json"] or "{}")
+    db().update(item["id"], status="accepted", reason=f"accepted by {user_id}")
+    db().history_mark_posted(item["norm_title"], data.get("title") or item["title"],
+                             datetime.now().strftime("%Y-%m-%d"), item["official_url"])
+
+
 @router.callback_query(F.data.startswith("ok:"))
 async def on_take(cb: CallbackQuery, bot: Bot):
+    """✅ Olamiz on a single card (cards sent before the browser existed)."""
     if not allowed(cb.from_user.id):
         return await cb.answer("Ruxsat yo'q", show_alert=True)
     item_id = int(cb.data.split(":")[1])
-    item = db().get(item_id)
-    data = json.loads(item["data_json"] or "{}")
-    db().update(item_id, status="accepted", reason=f"accepted by {cb.from_user.id}")
-    # So it is never suggested again
-    db().history_mark_posted(item["norm_title"], data.get("title") or item["title"],
-                             datetime.now().strftime("%Y-%m-%d"), item["official_url"])
+    take(db().get(item_id), cb.from_user.id)
     await cb.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"✅ Olindi — {cb.from_user.first_name}", callback_data="noop")]]))
     await cb.answer("Olindi")
     if settings.write_on_accept:
-        await write_and_send(bot, item_id, cb.message)
+        await write_and_send(bot, item_id, cb.message.chat.id, reply_to=cb.message.message_id)
 
 
-async def write_and_send(bot: Bot, item_id: int, card: Message) -> None:
-    """Writes the channel post for an accepted find and sends it for review under its card."""
-    note = await card.reply("✍️ Post yozilmoqda, ~20 soniya...")
+async def write_and_send(bot: Bot, item_id: int, chat_id: int, reply_to: int | None = None, by: str = "") -> None:
+    """Writes the channel post for a taken find and sends it with the publish buttons."""
+    title = escape((db().get(item_id)["title"] or "")[:80])
+    note = await bot.send_message(chat_id, f"✍️ «{title}» uchun post yozilmoqda, ~20 soniya..."
+                                  + (f" (oldi: {escape(by)})" if by else ""), reply_to_message_id=reply_to)
     try:
         await asyncio.to_thread(STATE["pipeline"].write, db().get(item_id))
     except Exception as e:
@@ -309,11 +370,11 @@ async def write_and_send(bot: Bot, item_id: int, card: Message) -> None:
     item = db().get(item_id)
     if item["status"] == "drafted":
         await note.delete()
-        await send_review(bot, item, reply_to=card.message_id)
+        await send_review(bot, item, reply_to=reply_to)
     else:
         db().update(item_id, status="accepted")   # still taken; only the writing failed
         await note.edit_text(
-            f"❌ Post yozilmadi: {escape(item['reason'] or '')[:200]}",
+            f"❌ «{title}» uchun post yozilmadi: {escape(item['reason'] or '')[:200]}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="🔁 Qayta yozish", callback_data=f"wr:{item_id}")]]))
 
@@ -327,9 +388,9 @@ async def on_rewrite(cb: CallbackQuery, bot: Bot):
     if not item or item["status"] != "accepted":
         return await cb.answer("Allaqachon yozilgan")
     await cb.answer()
+    reply_to = cb.message.reply_to_message.message_id if cb.message.reply_to_message else None
     await cb.message.delete()
-    card = cb.message.reply_to_message or cb.message
-    await write_and_send(bot, item_id, card)
+    await write_and_send(bot, item_id, cb.message.chat.id, reply_to=reply_to)
 
 
 @router.callback_query(F.data.startswith("no:"))
@@ -361,7 +422,7 @@ async def on_skip_reason(cb: CallbackQuery):
 async def cmd_help(m: Message):
     await m.answer(
         "EduGrants agenti.\n\n"
-        f"{SEARCH_TEXT} tugmasi yoki /find — hozir qidirish\n{MORE_TEXT} tugmasi yoki /more — navbatdagi keyingi 5 ta topilma\n/panel — qidirish tugmasini guruhda qadab qo'yish\n/profile — kanal profili\n/queue — navbat holati\n/stats — 30 kunlik statistika va xarajat\n"
+        f"{SEARCH_TEXT} tugmasi yoki /find — hozir qidirish\n{BROWSE_TEXT} tugmasi yoki /list — navbatdagi topilmalar (⬅️ ➡️ bilan varaqlang)\n/panel — qidirish tugmasini guruhda qadab qo'yish\n/profile — kanal profili\n/queue — navbat holati\n/stats — 30 kunlik statistika va xarajat\n"
         "/health — manbalar holati\n/errors — oxirgi xatolar\n/retry — xato bo'lganlarni qayta urinish\n\n"
         f"Chat ID: <code>{m.chat.id}</code>, sizning ID: <code>{m.from_user.id}</code>",
         reply_markup=main_keyboard(),
@@ -400,7 +461,7 @@ async def cmd_stats(m: Message):
         f"Topildi: {sum(c.values())}\nTakrorlar: {c.get('duplicate', 0)}\n"
         f"Filtrdan o'tmadi: {c.get('rejected', 0)} (shundan post formatiga to'g'ri kelmadi: {fmt})\n"
         f"Sizga ko'rsatildi: {c.get('shown', 0) + taken + c.get('skipped', 0)}\n"
-        f"Navbatda kutmoqda: {c.get('extracted', 0)} ({MORE_TEXT})\n"
+        f"Navbatda kutmoqda: {c.get('extracted', 0)} ({BROWSE_TEXT})\n"
         f"Olindi: {taken}\nKerak emas: {c.get('skipped', 0)}\n"
         f"AI xarajati: ~${s['cost_usd']} ({s['tokens_in']:,} in / {s['tokens_out']:,} out tokens)"
     )
@@ -579,7 +640,7 @@ async def main() -> None:
                     "there, put the chat id in .env and restart.")
     await bot.set_my_commands([
         BotCommand(command="find", description="Hozir qidirish"),
-        BotCommand(command="more", description="Navbatdagi yana 5 ta topilma"),
+        BotCommand(command="list", description="Navbatdagi topilmalar"),
         BotCommand(command="panel", description="Qidirish tugmasini qadash"),
         BotCommand(command="stats", description="Statistika"),
         BotCommand(command="health", description="Manbalar holati"),

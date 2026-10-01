@@ -66,7 +66,9 @@ class Settings:
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Asia/Tashkent"))
     run_every_hours: int = field(default_factory=lambda: _int("RUN_EVERY_HOURS", 24))
     max_drafts_per_run: int = field(default_factory=lambda: _int("MAX_DRAFTS_PER_RUN", 25))
-    cards_per_batch: int = field(default_factory=lambda: _int("CARDS_PER_BATCH", 5))
+    # Programmes only for master's/PhD students: the channel posted 16 of 850, so they need this fit
+    # score (5 = famous names like Chevening or Erasmus Mundus). 0 = no limit.
+    grad_only_min_fit: int = field(default_factory=lambda: _int("GRAD_ONLY_MIN_FIT", 5))
     max_process_per_run: int = field(default_factory=lambda: _int("MAX_PROCESS_PER_RUN", 60))
     min_days_left: int = field(default_factory=lambda: _int("MIN_DAYS_LEFT", 7))
     # Title matching window. Keep it well under a year so next year's round of the same

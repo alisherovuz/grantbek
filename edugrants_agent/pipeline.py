@@ -63,6 +63,21 @@ def post_link(data: dict, official_url: str | None, aggregators: set[str] = AGGR
     return None
 
 
+GRAD_LEVELS = {"master", "phd", "young_professional"}
+
+
+def grad_only(data: dict) -> bool:
+    """Only for master's/PhD students or professionals: no school pupils or bachelors."""
+    levels = set(data.get("level") or [])
+    return bool(levels) and levels <= GRAD_LEVELS
+
+
+def level_reason(data: dict, fit: int | None) -> str | None:
+    if grad_only(data) and (fit or 0) < settings.grad_only_min_fit:
+        return f"level: only {'/'.join(sorted(set(data.get('level') or [])))} (fit {fit or 0})"
+    return None
+
+
 def format_gaps(data: dict, official_url: str | None, aggregators: set[str] = AGGREGATOR_DOMAINS) -> list[str]:
     """What the @EduGrandsUz post layout needs but this find doesn't have. Every post has: title,
     Davlat, Moliyaviy ta'minot / Tanlov shakli / Dastur shakli, a description, Imtiyozlari,
@@ -234,6 +249,8 @@ class Pipeline:
         if not reason:
             gaps = format_gaps(data, official_url, self.aggregators)
             reason = f"post format: {', '.join(gaps)}" if gaps else None
+        if not reason:
+            reason = level_reason(data, item["fit_score"])
         if reason:
             self.db.update(item_id, status="rejected", reason=reason, **fields)
             # A rule that won't change next year (tuition, fee, ages, eligibility): stop watching it

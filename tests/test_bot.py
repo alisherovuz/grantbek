@@ -11,21 +11,43 @@ POSTABLE = {"host_country": "Online", "summary": "An online programme for studen
 
 
 class FakeMsg:
-    def __init__(self, bot, chat_id, text):
-        self.bot, self.chat_id, self.text, self.message_id = bot, chat_id, text, len(bot.sent)
+    def __init__(self, bot, chat_id, text, reply_markup=None, reply_to=None):
+        self.bot, self.chat_id, self.text, self.markup = bot, chat_id, text, reply_markup
+        self.message_id = 1000 + len(bot.sent)
+        self.chat = type("C", (), {"id": chat_id})()
+        self.reply_to_message = reply_to
+        self.deleted = False
 
     async def edit_text(self, text, reply_markup=None):
+        self.text, self.markup = text, reply_markup
         self.bot.edits.append(text)
+
+    async def edit_reply_markup(self, reply_markup=None):
+        self.markup = reply_markup
+
+    async def delete(self):
+        self.deleted = True
+
+    def buttons(self):
+        return {b.text: b.callback_data for row in (self.markup.inline_keyboard if self.markup else []) for b in row}
 
 
 class FakeBot:
     def __init__(self):
-        self.sent, self.edits = [], []
+        self.sent, self.edits, self.msgs = [], [], []
 
-    async def send_message(self, chat_id, text, reply_markup=None):
-        m = FakeMsg(self, chat_id, text)
+    async def send_message(self, chat_id, text, reply_markup=None, reply_to_message_id=None):
+        m = FakeMsg(self, chat_id, text, reply_markup)
         self.sent.append((chat_id, text))
+        self.msgs.append(m)
         return m
+
+
+def press(data, message, user=7):
+    async def answer(*a, **k):
+        pass
+    return type("CB", (), {"data": data, "message": message, "answer": staticmethod(answer),
+                           "from_user": type("U", (), {"id": user, "first_name": "Nurbek"})()})()
 
 
 class FakePipeline:
@@ -53,7 +75,8 @@ def test_button_runs_a_search(monkeypatch):
     asyncio.run(botmod.manual_search(b, -100, 7))
     assert botmod.STATE["pipeline"].runs == 1
     assert b.sent[0][1].startswith("🔎 Qidirilmoqda")
-    assert b.edits == ["✅ Qidiruv tugadi: 12 ta yangi e'lon ko'rildi, mos keladigan yangisi yo'q."]
+    assert b.edits[0].startswith("✅ Qidiruv tugadi: 12 ta yangi e'lon ko'rildi, mos keladigan yangisi yo'q.")
+    assert "Navbatda topilma yo'q" in b.edits[0]
 
 
 def test_button_refuses_strangers(monkeypatch):
@@ -81,7 +104,7 @@ def test_daily_run_always_reports(monkeypatch):
     setup(monkeypatch)
     b = FakeBot()
     asyncio.run(botmod.run_cycle(b, notify=True))
-    assert b.sent == [(-100, "☀️ Bugungi qidiruv: 12 ta yangi e'lon ko'rildi, mos keladigan yangisi yo'q.")]
+    assert len(b.sent) == 1 and b.sent[0][1].startswith("☀️ Bugungi qidiruv: 12 ta yangi e'lon ko'rildi, mos")
 
 
 def test_check_reports_instead_of_crashing(monkeypatch, tmp_path, capsys):
@@ -133,7 +156,7 @@ def test_bot_main_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(Dispatcher, "start_polling", fake_polling)
     monkeypatch.setattr(botmod, "Pipeline", lambda db: FakePipeline())
     asyncio.run(botmod.main())
-    assert started == {"commands": ["find", "more", "panel", "stats", "health", "help"],
+    assert started == {"commands": ["find", "list", "panel", "stats", "health", "help"],
                        "parse_mode": "HTML", "no_preview": True}
 
 
@@ -159,134 +182,6 @@ def test_cards_show_new_external_finds_before_old_programmes(monkeypatch, tmp_pa
 
 
 
-def test_olamiz_writes_the_post_and_sends_it_for_review(monkeypatch):
-    """Pressing ✅ Olamiz: marks it taken, writes the post, sends the draft with publish buttons."""
-    setup(monkeypatch)
-    monkeypatch.setattr(settings, "write_on_accept", True)
-    d = botmod.STATE["db"]
-    data = {"title": "Global Camp 2027", "deadline_type": "rolling", "format": "online", "funding": "none"}
-    iid = d.insert_item(source="s", url="https://c.example/", canonical_url="https://c.example/", title="Global Camp 2027",
-                        norm_title="global camp", summary="", published_at=None)
-    d.update(iid, status="shown", data_json=data, official_url="https://c.example/")
-
-    class Writer(FakePipeline):
-        def write(self, item):
-            d.update(item["id"], status="drafted", post_text="<b>Global Camp 2027</b>", platform_json={})
-    botmod.STATE["pipeline"] = Writer()
-    sent, edits = [], []
-
-    class Msg:
-        message_id = 50
-        async def edit_reply_markup(self, reply_markup=None):
-            edits.append(reply_markup.inline_keyboard[0][0].text)
-        async def reply(self, text):
-            sent.append(text)
-            class Note:
-                async def delete(self_inner): sent.append("deleted")
-                async def edit_text(self_inner, t): sent.append(t)
-            return Note()
-
-    class CB:
-        data = f"ok:{iid}"
-        from_user = type("U", (), {"id": 7, "first_name": "Nurbek"})()
-        message = Msg()
-        async def answer(self, *a, **k): pass
-
-    class B:
-        async def send_message(self, chat_id, text, reply_markup=None, reply_to_message_id=None):
-            sent.append(("review", text, [b.callback_data for row in reply_markup.inline_keyboard for b in row],
-                         reply_to_message_id))
-            return type("M", (), {"message_id": 99})()
-
-    asyncio.run(botmod.on_take(CB(), B()))
-    assert edits == ["✅ Olindi — Nurbek"]
-    review = [x for x in sent if isinstance(x, tuple)][0]
-    assert "<b>Global Camp 2027</b>" in review[1] and f"ap:{iid}" in review[2] and review[3] == 50
-    assert d.get(iid)["status"] == "in_review"
-
-
-def test_failed_write_offers_a_rewrite_button(monkeypatch):
-    setup(monkeypatch)
-    monkeypatch.setattr(settings, "write_on_accept", True)
-    d = botmod.STATE["db"]
-    iid = d.insert_item(source="s", url="https://c.example/", canonical_url="https://c.example/", title="Camp",
-                        norm_title="camp", summary="", published_at=None)
-    d.update(iid, status="shown", data_json={"title": "Camp"}, official_url="https://c.example/")
-    attempts = []
-
-    class Writer(FakePipeline):
-        def write(self, item):
-            attempts.append(1)
-            if len(attempts) == 1:
-                d.update(item["id"], status="error", reason="write: 400 tool_choice")
-            else:
-                d.update(item["id"], status="drafted", post_text="<b>Camp</b>", platform_json={})
-    botmod.STATE["pipeline"] = Writer()
-    notes, sent = [], []
-
-    class Note:
-        def __init__(self, card): self.reply_to_message = card
-        async def delete(self): pass
-        async def edit_text(self, t, reply_markup=None):
-            notes.append((t, reply_markup.inline_keyboard[0][0].callback_data))
-
-    class Card:
-        message_id = 50
-        async def edit_reply_markup(self, reply_markup=None): pass
-        async def reply(self, text): return Note(self)
-
-    card = Card()
-
-    class B:
-        async def send_message(self, chat_id, text, reply_markup=None, reply_to_message_id=None):
-            sent.append(text)
-            return type("M", (), {"message_id": 99})()
-
-    def cb(data, message):
-        return type("CB", (), {"data": data, "message": message, "answer": lambda self, *a, **k: _noop(),
-                               "from_user": type("U", (), {"id": 7, "first_name": "Nurbek"})()})()
-
-    asyncio.run(botmod.on_take(cb(f"ok:{iid}", card), B()))
-    assert notes[0][1] == f"wr:{iid}" and d.get(iid)["status"] == "accepted"
-    asyncio.run(botmod.on_rewrite(cb(f"wr:{iid}", Note(card)), B()))
-    assert sent == ["<b>Camp</b>"] or "<b>Camp</b>" in sent[0]
-    assert d.get(iid)["status"] == "in_review"
-
-
-async def _noop():
-    pass
-
-
-def test_finds_go_out_five_at_a_time(monkeypatch):
-    """12 good finds: the search sends the best 5, each "➕ Yana 5 ta" sends the next ones."""
-    from datetime import date, timedelta
-    setup(monkeypatch)
-    monkeypatch.setattr(botmod.asyncio, "sleep", lambda s: _noop())
-    d = botmod.STATE["db"]
-    dl = (date.today() + timedelta(days=60)).isoformat()
-    for i in range(12):
-        iid = d.insert_item(source="s", url=f"https://x{i}.example/", canonical_url=f"https://x{i}.example/",
-                            title=f"Find {i}", norm_title=f"find {i}", summary="", published_at=None)
-        d.update(iid, status="extracted", fit_score=5 if i == 11 else 3, official_url=f"https://x{i}.example/",
-                 data_json={**POSTABLE, "title": f"Find {i}", "deadline_type": "fixed", "deadline": dl})
-    b = FakeBot()
-    asyncio.run(botmod.run_cycle(b, notify=True))
-    cards = [t for _, t in b.sent if "Find" in t]
-    assert len(cards) == 5 and "Find 11" in cards[0]          # best fit first
-    assert "12 ta mos topilma" in b.sent[-1][1] and "yana 7 ta" in b.sent[-1][1]
-
-    b.sent.clear()
-    asyncio.run(botmod.send_more(b, -100, 7))
-    assert len([t for _, t in b.sent if "Find" in t]) == 5 and "yana 2 ta" in b.sent[-1][1]
-    b.sent.clear()
-    asyncio.run(botmod.send_more(b, -100, 7))
-    assert len([t for _, t in b.sent if "Find" in t]) == 2 and "boshqa topilma yo'q" in b.sent[-1][1]
-    b.sent.clear()
-    asyncio.run(botmod.send_more(b, -100, 7))
-    assert "qolmadi" in b.sent[0][1]
-    assert not d.by_status("extracted") and len(d.by_status("shown")) == 12
-
-
 def test_queued_find_drops_when_its_deadline_gets_close(monkeypatch):
     from datetime import date, timedelta
     setup(monkeypatch)
@@ -306,3 +201,128 @@ def test_queued_find_that_cannot_fill_a_post_is_dropped(monkeypatch):
     d.update(iid, status="extracted", official_url="https://x.example/",
              data_json={**POSTABLE, "title": "Vague", "deadline_type": "rolling", "benefits": []})
     assert botmod.ordered_finds() == [] and d.get(iid)["reason"] == "post format: no benefits"
+
+
+async def _noop():
+    pass
+
+
+def add_finds(d, n, dl_days=60):
+    from datetime import date, timedelta
+    dl = (date.today() + timedelta(days=dl_days)).isoformat()
+    ids = []
+    for i in range(n):
+        iid = d.insert_item(source="s", url=f"https://x{i}.example/", canonical_url=f"https://x{i}.example/",
+                            title=f"Find {i}", norm_title=f"find {i}", summary="", published_at=None)
+        d.update(iid, status="extracted", fit_score=5 if i == n - 1 else 3, official_url=f"https://x{i}.example/",
+                 data_json={**POSTABLE, "title": f"Find {i}", "deadline_type": "fixed", "deadline": dl})
+        ids.append(iid)
+    return ids
+
+
+def test_search_shows_all_finds_in_one_message(monkeypatch):
+    setup(monkeypatch)
+    add_finds(botmod.STATE["db"], 12)
+    b = FakeBot()
+    asyncio.run(botmod.manual_search(b, -100, 7))
+    assert len(b.msgs) == 1                      # the status message became the browser
+    m = b.msgs[0]
+    assert "12 ta mos topilma" in m.text and "Topilma 1 / 12" in m.text and "Find 11" in m.text   # best fit first
+    assert set(m.buttons()) >= {"⬅️ Oldingisi", "Keyingisi ➡️", "✅ Olamiz", "❌ Kerak emas", "1/12"}
+
+
+def test_next_and_previous_flip_through_the_queue(monkeypatch):
+    setup(monkeypatch)
+    add_finds(botmod.STATE["db"], 3)
+    b = FakeBot()
+    asyncio.run(botmod.open_browser(b, -100))
+    m = b.msgs[0]
+    asyncio.run(botmod.on_browse(press(m.buttons()["Keyingisi ➡️"], m)))
+    assert "Topilma 2 / 3" in m.text
+    asyncio.run(botmod.on_browse(press(m.buttons()["Keyingisi ➡️"], m)))
+    asyncio.run(botmod.on_browse(press(m.buttons()["Keyingisi ➡️"], m)))
+    assert "Topilma 1 / 3" in m.text             # wraps around
+    asyncio.run(botmod.on_browse(press(m.buttons()["⬅️ Oldingisi"], m)))
+    assert "Topilma 3 / 3" in m.text
+
+
+def test_olamiz_in_the_browser_writes_the_post_and_moves_on(monkeypatch):
+    setup(monkeypatch)
+    monkeypatch.setattr(settings, "write_on_accept", True)
+    d = botmod.STATE["db"]
+    add_finds(d, 3)
+
+    class Writer(FakePipeline):
+        def write(self, item):
+            d.update(item["id"], status="drafted", post_text=f"<b>{item['title']}</b>", platform_json={})
+    botmod.STATE["pipeline"] = Writer()
+    b = FakeBot()
+    asyncio.run(botmod.open_browser(b, -100))
+    m = b.msgs[0]
+    taken = int(m.buttons()["✅ Olamiz"].split(":")[2])
+    asyncio.run(botmod.on_browse_take(press(m.buttons()["✅ Olamiz"], m), b))
+    assert "Topilma 1 / 2" in m.text and f"b:ok:{taken}" not in m.buttons().values()
+    review = [x for x in b.msgs if "Chop etish" in str(x.buttons())]
+    assert review and "Find 2" in review[0].text and d.get(taken)["status"] == "in_review"
+
+
+def test_kerak_emas_asks_why_then_moves_on(monkeypatch):
+    setup(monkeypatch)
+    d = botmod.STATE["db"]
+    add_finds(d, 2)
+    b = FakeBot()
+    asyncio.run(botmod.open_browser(b, -100))
+    m = b.msgs[0]
+    first = int(m.buttons()["❌ Kerak emas"].split(":")[2])
+    asyncio.run(botmod.on_browse_skip(press(m.buttons()["❌ Kerak emas"], m)))
+    assert "↩️ Orqaga" in m.buttons() and "🎯 Bizga mos emas" in m.buttons()
+    asyncio.run(botmod.on_browse_skip_reason(press(m.buttons()["🎯 Bizga mos emas"], m)))
+    assert d.get(first)["status"] == "skipped" and d.get(first)["reason"] == "Bizga mos emas"
+    assert "Topilma 1 / 1" in m.text
+
+
+def test_last_find_leaves_an_empty_browser(monkeypatch):
+    setup(monkeypatch)
+    d = botmod.STATE["db"]
+    add_finds(d, 1)
+    b = FakeBot()
+    asyncio.run(botmod.open_browser(b, -100))
+    m = b.msgs[0]
+    assert "Oldingisi" not in str(m.buttons())     # nothing to flip through
+    asyncio.run(botmod.on_browse_skip(press(m.buttons()["❌ Kerak emas"], m)))
+    asyncio.run(botmod.on_browse_skip_reason(press(m.buttons()["💸 Pullik"], m)))
+    assert "Navbatda topilma yo'q" in m.text
+
+
+def test_failed_write_offers_a_rewrite_button(monkeypatch):
+    setup(monkeypatch)
+    monkeypatch.setattr(settings, "write_on_accept", True)
+    d = botmod.STATE["db"]
+    add_finds(d, 1)
+    attempts = []
+
+    class Writer(FakePipeline):
+        def write(self, item):
+            attempts.append(1)
+            if len(attempts) == 1:
+                d.update(item["id"], status="error", reason="write: 400 tool_choice")
+            else:
+                d.update(item["id"], status="drafted", post_text="<b>Camp</b>", platform_json={})
+    botmod.STATE["pipeline"] = Writer()
+    b = FakeBot()
+    asyncio.run(botmod.open_browser(b, -100))
+    m = b.msgs[0]
+    asyncio.run(botmod.on_browse_take(press(m.buttons()["✅ Olamiz"], m), b))
+    note = [x for x in b.msgs if "🔁 Qayta yozish" in x.buttons()][0]
+    assert "post yozilmadi" in note.text
+    asyncio.run(botmod.on_rewrite(press(note.buttons()["🔁 Qayta yozish"], note), b))
+    assert note.deleted and any(x.text.endswith("<b>Camp</b>") for x in b.msgs)
+
+
+def test_masters_only_waits_for_a_famous_name(monkeypatch):
+    from edugrants_agent.pipeline import level_reason
+    assert level_reason({"level": ["master"]}, 3).startswith("level: only master")
+    assert level_reason({"level": ["master", "phd"]}, 5) is None        # Chevening-class names pass
+    assert level_reason({"level": ["bachelor", "master"]}, 2) is None   # bachelors too: normal rules
+    monkeypatch.setattr(settings, "grad_only_min_fit", 0)
+    assert level_reason({"level": ["phd"]}, 1) is None
