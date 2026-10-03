@@ -73,13 +73,21 @@ def remember_post(db, msg_id: int, posted_at: datetime | None, text: str, link: 
     return True
 
 
+def havola(links) -> str | None:
+    """The post's registration link ("Havola"): the first link that isn't Telegram or our own site."""
+    for u in links or []:
+        if u and u.startswith("http") and not re.search(r"(^|//)(t\.me|telegram\.me|edugrants\.uz)/", u + "/"):
+            return u
+    return None
+
+
 def import_export_posts(db, path) -> int:
     """Fills the list from the Telegram export once (posts made before the agent was watching the channel)."""
     from .history import parse_export
     n = 0
     for p in parse_export(path):
         mid = re.sub(r"\D", "", str(p.get("id") or ""))
-        if mid and remember_post(db, int(mid), p.get("date"), p.get("text") or ""):
+        if mid and remember_post(db, int(mid), p.get("date"), p.get("text") or "", havola(p.get("links"))):
             n += 1
     return n
 

@@ -115,6 +115,13 @@ CREATE TABLE IF NOT EXISTS community_qa (
     topic TEXT
 );
 
+CREATE TABLE IF NOT EXISTS page_cache (
+    url TEXT PRIMARY KEY,          -- a post's "Havola" (the official page)
+    text TEXT,
+    fetched_at TEXT NOT NULL,
+    ok INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS comment_threads (
     chat_id INTEGER NOT NULL,      -- the channel's comments group
     msg_id INTEGER NOT NULL,       -- the channel post as it appears in that group
@@ -142,7 +149,8 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 MIGRATIONS = [("items", "history_id", "INTEGER"), ("items", "fit_score", "INTEGER"), ("items", "fit_reason", "TEXT"),
               ("history", "excluded", "TEXT"), ("history", "score", "REAL"), ("channel_posts", "text", "TEXT"),
               ("community_qa", "escalated", "INTEGER DEFAULT 0"), ("community_qa", "handled", "INTEGER DEFAULT 0"),
-              ("community_qa", "link", "TEXT"), ("community_qa", "correction", "TEXT"), ("community_qa", "who", "TEXT")]
+              ("community_qa", "link", "TEXT"), ("community_qa", "correction", "TEXT"), ("community_qa", "who", "TEXT"),
+              ("comment_threads", "link", "TEXT")]
 
 
 def now_iso() -> str:
@@ -336,10 +344,30 @@ class DB:
         return self.conn.execute("SELECT * FROM community_qa WHERE at >= datetime('now', ?) ORDER BY id DESC LIMIT ?",
                                  (f"-{days} days", limit)).fetchall()
 
-    def save_thread(self, chat_id: int, msg_id: int, post_text: str) -> None:
+    def cached_page(self, url: str, max_age_hours: float = 72) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM page_cache WHERE url=? AND fetched_at >= datetime('now', ?)",
+                                 (url, f"-{max_age_hours} hours")).fetchone()
+
+    def cache_page(self, url: str, text: str | None, ok: bool) -> None:
         with self.tx() as c:
-            c.execute("INSERT OR REPLACE INTO comment_threads(chat_id, msg_id, post_text) VALUES (?,?,?)",
-                      (chat_id, msg_id, post_text))
+            c.execute("INSERT OR REPLACE INTO page_cache(url, text, fetched_at, ok) VALUES (?,?,?,?)",
+                      (url, (text or "")[:20000], now_iso(), int(ok)))
+
+    def post_by_text(self, text: str) -> sqlite3.Row | None:
+        """Finds our stored post from its text (e.g. the copy of it in the comments group)."""
+        from .weekly import post_title
+        title = post_title(text)
+        return self.conn.execute("SELECT * FROM channel_posts WHERE title=? ORDER BY msg_id DESC LIMIT 1",
+                                 (title,)).fetchone() if title else None
+
+    def save_thread(self, chat_id: int, msg_id: int, post_text: str, link: str | None = None) -> None:
+        with self.tx() as c:
+            c.execute("INSERT OR REPLACE INTO comment_threads(chat_id, msg_id, post_text, link) VALUES (?,?,?,?)",
+                      (chat_id, msg_id, post_text, link))
+
+    def thread_link(self, chat_id: int, msg_id: int) -> str | None:
+        r = self.conn.execute("SELECT link FROM comment_threads WHERE chat_id=? AND msg_id=?", (chat_id, msg_id)).fetchone()
+        return r[0] if r else None
 
     def thread_text(self, chat_id: int, msg_id: int) -> str | None:
         r = self.conn.execute("SELECT post_text FROM comment_threads WHERE chat_id=? AND msg_id=?", (chat_id, msg_id)).fetchone()

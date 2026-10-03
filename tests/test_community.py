@@ -179,3 +179,150 @@ def test_grantbek_never_shares_the_managers_bot(monkeypatch):
     bots = agents.setup_bots(lambda tok: object())
     assert "community" not in agents.BOTS and len(bots) == 1
     agents.BOTS.clear()
+
+
+# --------------------------------------------------------------------------- official pages ("Havola")
+OFFICIAL = "https://diamondchallenge.org/register"
+PAGE_TEXT = ("Diamond Challenge 2027. Who can apply: teams of 2-4 high school students aged 14-18 from any country. "
+             "Entry is free. Submit a pitch deck and a 3-minute video by January 14, 2027.")
+
+
+@pytest.fixture
+def pages(monkeypatch):
+    calls = []
+
+    def fake_fetch(url):
+        calls.append(url)
+        return type("Page", (), {"text": PAGE_TEXT})()
+    monkeypatch.setattr("edugrants_agent.fetch.fetch_page", fake_fetch)
+    return calls
+
+
+def test_comment_answers_use_the_official_page_behind_havola(gulsara, pages):
+    d, _ = gulsara
+    llm = LLM({"action": "reply", "reply": "Jamoa 2-4 kishidan iborat bo'ladi.", "topic": "jamoa"})
+    botmod.STATE["pipeline"] = type("P", (), {"llm": llm})()
+    group = Chat(-200, "supergroup")
+    forwarded = Msg(POST, group, auto=True, mid=500)
+    forwarded.html_text = POST.replace("Havola", f'<a href="{OFFICIAL}">Havola</a>')
+    asyncio.run(community.on_comment(forwarded))              # the page is read as soon as the post arrives
+    assert d.thread_link(-200, 500) == OFFICIAL and pages == [OFFICIAL]
+    c = Msg("Jamoada necha kishi bo'ladi?", group, User(), reply_to=Msg("hi", group, User()), thread=500)
+    asyncio.run(community.on_comment(c))
+    system = llm.calls[0][0]
+    assert f"OFFICIAL PAGE ({OFFICIAL})" in system and "teams of 2-4" in system
+    assert "trust the official page" in system
+    assert pages == [OFFICIAL]                                # cached: not downloaded again
+    assert c.replies == ["Jamoa 2-4 kishidan iborat bo'ladi."]
+
+
+def test_dm_answers_read_the_official_pages_of_matching_open_posts(gulsara, pages):
+    d, _ = gulsara
+    remember_post(d, 3672, datetime(2026, 9, 30), POST, OFFICIAL)   # the post now knows its Havola link
+    llm = LLM({"action": "reply", "reply": "Bepul.", "topic": "to'lov"})
+    botmod.STATE["pipeline"] = type("P", (), {"llm": llm})()
+    m = Msg("Diamond Challenge pullikmi?", Chat(55, "private"), User())
+    asyncio.run(community.on_dm(m))
+    assert "Entry is free" in llm.calls[0][0] and m.replies == ["Bepul."]
+
+
+def test_an_unreadable_official_page_is_not_retried_at_once(gulsara, monkeypatch):
+    d, _ = gulsara
+    tries = []
+
+    def broken(url):
+        tries.append(url)
+        raise RuntimeError("403")
+    monkeypatch.setattr("edugrants_agent.fetch.fetch_page", broken)
+    assert community.official_page(d, OFFICIAL) == "" and community.official_page(d, OFFICIAL) == ""
+    assert tries == [OFFICIAL]
+    assert "could not be read" in community.page_block(d, OFFICIAL)
+
+
+def test_the_daily_refresh_reads_official_pages_of_open_posts(gulsara, pages, monkeypatch):
+    d, _ = gulsara
+    monkeypatch.setattr(settings, "tg_string_session", None)
+    remember_post(d, 3672, datetime(2026, 9, 30), POST, OFFICIAL)
+    botmod.STATE["lock"] = asyncio.Lock()
+    asyncio.run(community.refresh_base())
+    assert pages == [OFFICIAL] and "1 ta rasmiy sahifa" in d.events()[0]["text"]
+
+
+# --------------------------------------------------------------------------- the group, outside post threads
+def test_general_questions_in_the_group_are_answered(gulsara):
+    d, _ = gulsara
+    llm = LLM({"action": "reply", "reply": "Diamond Challenge bor: https://t.me/EduGrandsUz/3672", "topic": "tanlov"})
+    botmod.STATE["pipeline"] = type("P", (), {"llm": llm})()
+    group = Chat(-200, "supergroup")
+    q = Msg("Maktab o'quvchilari uchun biznes tanlovi bormi?", group, User())
+    asyncio.run(community.on_comment(q))
+    assert q.replies and "ALL OPPORTUNITIES WITH OPEN DEADLINES" in llm.calls[0][0]
+    assert "o'zaro" in llm.calls[0][0]                         # told to ignore members chatting with each other
+
+
+def test_group_chit_chat_costs_nothing_but_mentions_are_answered(gulsara, monkeypatch):
+    d, _ = gulsara
+    llm = LLM({"action": "reply", "reply": "Salom!", "topic": "salom"})
+    botmod.STATE["pipeline"] = type("P", (), {"llm": llm})()
+    monkeypatch.setitem(agents.USERNAMES, "community", "GrantBekBot")
+    group = Chat(-200, "supergroup")
+    asyncio.run(community.on_comment(Msg("ha men ham bordim kecha", group, User())))
+    assert llm.calls == []
+    m = Msg("@GrantBekBot salom", group, User())
+    asyncio.run(community.on_comment(m))
+    assert m.replies == ["Salom!"] and "unga murojaat" in llm.calls[0][0]
+
+
+def test_replies_to_grantbek_count_as_talking_to_him(gulsara):
+    d, _ = gulsara
+    llm = LLM({"action": "reply", "reply": "Albatta!", "topic": "rahmat"})
+    botmod.STATE["pipeline"] = type("P", (), {"llm": llm})()
+    agents.BOTS["community"].id = 777
+    group = Chat(-200, "supergroup")
+    his = Msg("Diamond Challenge bor", group, User(uid=777, is_bot=True))
+    m = Msg("tushunarli, yana yordam berasizmi", group, User(), reply_to=his)
+    asyncio.run(community.on_comment(m))
+    assert m.replies == ["Albatta!"]
+
+
+# --------------------------------------------------------------------------- DMs never go unanswered
+def test_a_dm_hello_gets_a_greeting_even_if_claude_says_ignore(gulsara):
+    d, _ = gulsara
+    botmod.STATE["pipeline"] = type("P", (), {"llm": LLM({"action": "ignore", "reply": "", "topic": "salom"})})()
+    m = Msg("salom", Chat(55, "private"), User())
+    asyncio.run(community.on_dm(m))
+    assert len(m.replies) == 1 and "GrantBek" in m.replies[0]
+    assert any("Shaxsiy xabar keldi" in e["text"] for e in d.events())
+
+
+def test_a_dm_gets_a_polite_reply_when_claude_fails(gulsara):
+    d, _ = gulsara
+
+    class Broken:
+        def _call(self, *a, **k):
+            raise RuntimeError("overloaded")
+    botmod.STATE["pipeline"] = type("P", (), {"llm": Broken()})()
+    m = Msg("Diamond Challenge muddati?", Chat(55, "private"), User())
+    asyncio.run(community.on_dm(m))
+    assert len(m.replies) == 1 and "Kechirasiz" in m.replies[0]
+    assert any(e["kind"] == "error" and "overloaded" in e["text"] for e in d.events())
+
+
+# --------------------------------------------------------------------------- short, simple answers
+def test_he_is_told_to_write_short_and_simple(gulsara):
+    d, _ = gulsara
+    llm = LLM({"action": "reply", "reply": "Ha, bepul.", "topic": "to'lov"})
+    botmod.STATE["pipeline"] = type("P", (), {"llm": llm})()
+    asyncio.run(community.on_dm(Msg("Pullikmi?", Chat(55, "private"), User())))
+    assert "short and simple" in llm.calls[0][0] and "15-year-old" in llm.calls[0][0]
+
+
+def test_long_answers_are_cut_at_a_sentence_and_keep_the_link(gulsara):
+    d, _ = gulsara
+    long = ("Diamond Challenge maktab o'quvchilari uchun. " * 15) + "Batafsil: https://t.me/EduGrandsUz/3672"
+    botmod.STATE["pipeline"] = type("P", (), {"llm": LLM({"action": "reply", "reply": long, "topic": "t"})})()
+    m = Msg("Bu nima?", Chat(55, "private"), User())
+    asyncio.run(community.on_dm(m))
+    out = m.replies[0]
+    assert len(out) < 520 and out.endswith("https://t.me/EduGrandsUz/3672") and "uchun.\n" in out
+    assert community.shorten("Qisqa javob.") == "Qisqa javob."

@@ -300,7 +300,9 @@ def handle_telegram_posts(src: dict, db: DB, posts, skip_keywords: list[str]) ->
                                    normalize_text(text), urls)
         elif role == "own":
             from .weekly import remember_post
-            remember_post(db, msg.id, msg.date.replace(tzinfo=None) if msg.date else None, text)   # for the Monday list
+            from .weekly import havola
+            remember_post(db, msg.id, msg.date.replace(tzinfo=None) if msg.date else None, text,
+                          havola(message_urls(msg)))     # for the Monday list and GrantBek
             if OPP_RE.search(text):
                 db.history_mark_posted(normalize_title(title), title, (when or "")[:10],
                                        next((u for u in urls if "edugrants.uz" not in u), None))

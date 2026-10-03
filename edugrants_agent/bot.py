@@ -302,7 +302,9 @@ def learn_post(msg_id: int, html_text: str) -> None:
     """A post we just published goes into the Monday list and GrantBek's knowledge right away."""
     try:
         from .weekly import remember_post
-        remember_post(db(), msg_id, datetime.utcnow(), re.sub(r"<[^>]+>", "", html_text or ""))
+        from .weekly import havola
+        remember_post(db(), msg_id, datetime.utcnow(), re.sub(r"<[^>]+>", "", html_text or ""),
+                      havola(re.findall(r'href="([^"]+)"', html_text or "")))
     except Exception:
         log.exception("could not remember the published post")
 
@@ -845,8 +847,9 @@ async def on_noop(cb: CallbackQuery):
 def auto_import_history(database: DB) -> None:
     """On a fresh server the database is empty. If the channel export is in the project folder,
     load it once so nothing has to be typed on the server."""
-    if (not database.conn.execute("SELECT 1 FROM channel_posts WHERE text IS NOT NULL LIMIT 1").fetchone()
-            and settings.history_file.exists()):     # (re)filled once, now with the full text for GrantBek
+    if (not database.get_meta("export_posts_v2") and settings.history_file.exists()):
+        # (re)filled once, now with the full text and the "Havola" link of every post, for GrantBek
+        database.set_meta("export_posts_v2", True)
         from .weekly import import_export_posts
         log.info("Monday list: %d past channel posts with deadlines",
                  import_export_posts(database, settings.history_file))
