@@ -75,6 +75,53 @@ CREATE TABLE IF NOT EXISTS competitor_posts (
     urls TEXT
 );
 
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    agent TEXT NOT NULL,
+    kind TEXT NOT NULL,            -- info | task | done | error
+    text TEXT NOT NULL,
+    task_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,            -- search | weekly_list | daily_report | write_post | order
+    agent TEXT NOT NULL,           -- who does it: manager | finder | writer
+    status TEXT NOT NULL,          -- new | working | waiting | done | failed | cancelled
+    payload TEXT,
+    result TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS channel_posts (
+    msg_id INTEGER PRIMARY KEY,    -- the post's number in our own channel
+    posted_at TEXT,
+    title TEXT NOT NULL,
+    flag TEXT,
+    deadline TEXT,                 -- YYYY-MM-DD read from "Ro'yxatdan o'tishning so'nggi muddati"
+    link TEXT
+);
+
+CREATE TABLE IF NOT EXISTS community_qa (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    place TEXT NOT NULL,           -- dm | comment
+    question TEXT NOT NULL,
+    answer TEXT,
+    topic TEXT
+);
+
+CREATE TABLE IF NOT EXISTS comment_threads (
+    chat_id INTEGER NOT NULL,      -- the channel's comments group
+    msg_id INTEGER NOT NULL,       -- the channel post as it appears in that group
+    post_text TEXT,
+    PRIMARY KEY (chat_id, msg_id)
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -93,7 +140,7 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 
 
 MIGRATIONS = [("items", "history_id", "INTEGER"), ("items", "fit_score", "INTEGER"), ("items", "fit_reason", "TEXT"),
-              ("history", "excluded", "TEXT"), ("history", "score", "REAL")]
+              ("history", "excluded", "TEXT"), ("history", "score", "REAL"), ("channel_posts", "text", "TEXT")]
 
 
 def now_iso() -> str:
@@ -220,6 +267,71 @@ class DB:
             if costs:
                 c.execute("DELETE FROM llm_usage")
         return n
+
+    # ---- agents: event log and task board ---------------------------------
+    def log_event(self, agent: str, kind: str, text: str, task_id: int | None = None) -> None:
+        with self.tx() as c:
+            c.execute("INSERT INTO events(at, agent, kind, text, task_id) VALUES (?,?,?,?,?)",
+                      (now_iso(), agent, kind, text[:1000], task_id))
+
+    def events(self, limit: int = 50, since: str | None = None) -> list[sqlite3.Row]:
+        if since:
+            return self.conn.execute("SELECT * FROM events WHERE at >= ? ORDER BY id DESC LIMIT ?", (since, limit)).fetchall()
+        return self.conn.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+    def add_task(self, type_: str, agent: str, payload=None, created_by: str = "manager", status: str = "new") -> int:
+        with self.tx() as c:
+            cur = c.execute("INSERT INTO tasks(type, agent, status, payload, created_by, created_at, updated_at)"
+                            " VALUES (?,?,?,?,?,?,?)", (type_, agent, status, json.dumps(payload, ensure_ascii=False),
+                                                        created_by, now_iso(), now_iso()))
+            return cur.lastrowid
+
+    def update_task(self, task_id: int, status: str, result=None) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE tasks SET status=?, result=COALESCE(?, result), updated_at=? WHERE id=?",
+                      (status, None if result is None else json.dumps(result, ensure_ascii=False), now_iso(), task_id))
+
+    def task(self, task_id: int) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+
+    def tasks(self, limit: int = 30) -> list[sqlite3.Row]:
+        return self.conn.execute("SELECT * FROM tasks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+    # ---- our own channel's posts (for the Monday deadline list) ------------
+    def save_channel_post(self, msg_id: int, posted_at: str | None, title: str, flag: str | None,
+                          deadline: str | None, link: str | None, text: str | None = None) -> None:
+        with self.tx() as c:
+            c.execute("INSERT INTO channel_posts(msg_id, posted_at, title, flag, deadline, link, text) VALUES (?,?,?,?,?,?,?)"
+                      " ON CONFLICT(msg_id) DO UPDATE SET title=excluded.title, flag=excluded.flag,"
+                      " deadline=excluded.deadline, link=excluded.link, text=COALESCE(excluded.text, channel_posts.text)",
+                      (msg_id, posted_at, title, flag, deadline, link, text))
+
+    def open_channel_posts(self, today: str, limit: int = 200) -> list[sqlite3.Row]:
+        """Our posts whose deadline hasn't passed (what GrantBek can tell people about)."""
+        return self.conn.execute("SELECT * FROM channel_posts WHERE deadline >= ? ORDER BY deadline LIMIT ?",
+                                 (today, limit)).fetchall()
+
+    def add_qa(self, place: str, question: str, answer: str | None, topic: str | None) -> None:
+        with self.tx() as c:
+            c.execute("INSERT INTO community_qa(at, place, question, answer, topic) VALUES (?,?,?,?,?)",
+                      (now_iso(), place, question[:1000], (answer or "")[:1500], topic))
+
+    def recent_qa(self, days: int = 7, limit: int = 150) -> list[sqlite3.Row]:
+        return self.conn.execute("SELECT * FROM community_qa WHERE at >= datetime('now', ?) ORDER BY id DESC LIMIT ?",
+                                 (f"-{days} days", limit)).fetchall()
+
+    def save_thread(self, chat_id: int, msg_id: int, post_text: str) -> None:
+        with self.tx() as c:
+            c.execute("INSERT OR REPLACE INTO comment_threads(chat_id, msg_id, post_text) VALUES (?,?,?)",
+                      (chat_id, msg_id, post_text))
+
+    def thread_text(self, chat_id: int, msg_id: int) -> str | None:
+        r = self.conn.execute("SELECT post_text FROM comment_threads WHERE chat_id=? AND msg_id=?", (chat_id, msg_id)).fetchone()
+        return r[0] if r else None
+
+    def channel_posts_between(self, first: str, last: str) -> list[sqlite3.Row]:
+        return self.conn.execute("SELECT * FROM channel_posts WHERE deadline BETWEEN ? AND ? ORDER BY deadline, msg_id DESC",
+                                 (first, last)).fetchall()
 
     def get_meta(self, key: str, default=None):
         row = self.conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()

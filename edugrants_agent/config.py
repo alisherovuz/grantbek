@@ -82,6 +82,13 @@ class Settings:
 
     # One search a day at this local time. Set RUN_AT empty to use RUN_EVERY_HOURS instead.
     run_at: str | None = field(default_factory=lambda: _env("RUN_AT", "09:00"))
+    community_model: str | None = field(default_factory=lambda: _env("COMMUNITY_MODEL"))   # GrantBek; default MODEL_FAST
+    community_refresh_at: str | None = field(default_factory=lambda: _env("COMMUNITY_REFRESH_AT", "06:30"))
+    # Strong finds go straight to Mirzo: the post is written before you look, you only tap "Chop etish"
+    auto_write_min_fit: int = field(default_factory=lambda: _int("AUTO_WRITE_MIN_FIT", 5))
+    auto_write_per_day: int = field(default_factory=lambda: _int("AUTO_WRITE_PER_DAY", 3))   # 0 = off
+    report_at: str | None = field(default_factory=lambda: _env("REPORT_AT", "21:00"))      # Toshmat aka's daily report
+    weekly_at: str | None = field(default_factory=lambda: _env("WEEKLY_AT", "mon 08:30"))  # Mirzo's Monday list
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Asia/Tashkent"))
     run_every_hours: int = field(default_factory=lambda: _int("RUN_EVERY_HOURS", 24))
     max_drafts_per_run: int = field(default_factory=lambda: _int("MAX_DRAFTS_PER_RUN", 25))

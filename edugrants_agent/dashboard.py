@@ -249,7 +249,8 @@ def build(db, days: int = 14) -> dict:
 
 
 PURPOSE_UZ = {"triage": "Saralash (vibe filtri)", "find_official": "Rasmiy sahifani topish",
-              "extract": "Rasmiy sahifani o'qish", "write": "Post yozish", "check": "Tekshiruv"}
+              "extract": "Rasmiy sahifani o'qish", "write": "Post yozish", "check": "Tekshiruv",
+              "community": "GrantBek: javoblar", "report": "Kunlik hisobot", "order": "Buyruqlar"}
 
 
 def _tz_offset() -> str:
@@ -354,8 +355,13 @@ def system(db) -> dict:
                         "error": (r["last_error"] or "")[:160] if bad else ""})
     errors = [{"id": r["id"], "title": r["title"][:90], "why": reason_uz(r["reason"]) if (r["reason"] or "").startswith("write:")
                else (r["reason"] or "")[:160]} for r in db.by_status("error", limit=30)]
+    from .agents import AGENTS
+    team = [{"at": local_time(e["at"]), "who": f"{AGENTS.get(e['agent'], {}).get('emoji', '')} "
+             f"{AGENTS.get(e['agent'], {}).get('name', e['agent'])}", "kind": e["kind"], "text": e["text"][:300]}
+            for e in db.events(40)]
     lock = STATE.get("lock")
-    return {"searching": bool(lock and lock.locked()),
+    return {"team": team,
+            "searching": bool(lock and lock.locked()),
             "search_started": local_time(db.get_meta("search_started")) if db.get_meta("search_started") else None,
             "last_search": {**last, "at": local_time(last["at"])} if last.get("at") else None,
             "next_search": next_search_at(), "run_at": settings.run_at,

@@ -176,6 +176,7 @@
   </section>
 
   <section class="pane" id="pane-system" hidden>
+    <div class="box" id="teamBox"></div>
     <div class="box" id="errorsBox"></div>
     <div class="box" id="sourcesBox"></div>
     <div class="box">
@@ -371,6 +372,13 @@ function renderSystem() {
   eb.replaceChildren(head, ...(s.errors.length ? s.errors.map(x => el("div", { class: "row" },
       el("span", { text: x.title }), el("span", { class: "bad", text: x.why })))
     : [el("div", { class: "muted", text: "Xato yo'q 👌" })]));
+
+  const KIND = { error: "bad", done: "ok", task: "muted", info: "muted" };
+  $("teamBox").replaceChildren(el("h2", {}, el("span", { text: "👥 Jamoa jurnali" })),
+    ...(s.team && s.team.length ? s.team.map(e => el("div", { class: "row" },
+      el("span", {}, el("strong", { text: e.who + " " }), el("span", { class: KIND[e.kind] || "", text: e.text })),
+      el("span", { class: "muted", style: "white-space:nowrap", text: e.at })))
+      : [el("div", { class: "muted", text: "Hali hech narsa bo'lmagan." })]));
 
   const sb = $("sourcesBox");
   const bad = s.sources.filter(x => !x.ok).length;

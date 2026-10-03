@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import logging
 from datetime import date, datetime, timedelta
 from html import escape
@@ -18,6 +19,7 @@ from aiogram.types import (BotCommand, CallbackQuery, ForceReply, InlineKeyboard
                            KeyboardButton, LinkPreviewOptions, Message, ReplyKeyboardMarkup)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from .agents import AGENTS, BOTS, _DB, bot_for, is_manager_bot, note as log_event, say, setup_bots
 from .config import database_is_temporary, settings
 from .dashboard import MANUAL_REASON, dashboard_url
 from .db import DB
@@ -28,7 +30,16 @@ from .render import finder_card, uz_date
 log = logging.getLogger(__name__)
 router = Router()
 
-STATE: dict = {"db": None, "pipeline": None, "lock": asyncio.Lock(), "push_lock": asyncio.Lock(), "pending_edits": {}}
+
+async def _only_manager_bot(message: Message, bot: Bot) -> bool:
+    """Several agent bots may sit in the group; only Toshmat aka's bot answers typed messages,
+    so nothing gets answered twice. (Buttons always go to the bot that sent them.)"""
+    return is_manager_bot(bot)
+
+router.message.filter(_only_manager_bot)
+
+STATE: dict = {"db": None, "pipeline": None, "lock": asyncio.Lock(), "push_lock": asyncio.Lock(), "pending_edits": {},
+               "weekly_edits": {}}
 
 
 def db() -> DB:
@@ -66,9 +77,11 @@ def review_header(item) -> str:
 
 
 async def send_review(bot: Bot, item, reply_to: int | None = None) -> None:
-    msg = await bot.send_message(settings.admin_chat_id, review_header(item) + item["post_text"],
-                                 reply_markup=keyboard(item["id"]), reply_to_message_id=reply_to)
+    """Mirzo (the writer) brings a finished post to the group with the publish buttons."""
+    msg = await bot_for("writer", bot).send_message(settings.admin_chat_id, review_header(item) + item["post_text"],
+                                                    reply_markup=keyboard(item["id"]), reply_to_message_id=reply_to)
     db().update(item["id"], status="in_review", review_message_id=msg.message_id)
+    log_event("writer", "done", f"Post tayyor: {item['title'][:80]}")
 
 
 async def push_drafts(bot: Bot) -> int:
@@ -233,13 +246,30 @@ async def run_cycle(bot: Bot, notify: bool = False, fast_only: bool = False, man
     (`status`: the "Qidirilmoqda..." message to turn into the report.)"""
     if STATE["lock"].locked():
         return "⏳ Qidiruv allaqachon ketmoqda, tugashini kuting."
+    finder = AGENTS["finder"]["name"]
     async with STATE["lock"]:
         db().set_meta("search_started", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
-        result = await asyncio.to_thread(STATE["pipeline"].run, fast_only)
+        task_id = db().add_task("search", "finder", {"manual": manual}, status="working",
+                                created_by="owner" if manual or head else "manager")
+        log_event("manager", "task", f"{finder}, qidiruvni boshla", task_id)
+        broken_before = failing_sources()
+        try:
+            result = await asyncio.to_thread(STATE["pipeline"].run, fast_only)
+        except Exception as e:
+            db().update_task(task_id, "failed", {"error": str(e)[:300]})
+            await say("manager", f"⚠️ {finder}ning qidiruvi to'xtab qoldi: <code>{escape(str(e))[:300]}</code>",
+                      kind="error", task_id=task_id, fallback_bot=bot)
+            raise
         sent = await push_drafts(bot) if settings.mode != "finder" else 0
+        newly_broken = {k: v for k, v in failing_sources().items() if k not in broken_before}
+        if newly_broken:
+            await say("finder", "⚠️ Bu manbalar ochilmadi: " + "; ".join(
+                f"{escape(k)} ({escape((v or '')[:80])})" for k, v in newly_broken.items()),
+                kind="error", task_id=task_id, fallback_bot=bot)
     seen = result["added"]
     waiting = len(ordered_finds()) if settings.mode == "finder" else sent
     db().set_meta("last_search", {"at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), "seen": seen, "waiting": waiting})
+    db().update_task(task_id, "done", {"seen": seen, "waiting": waiting})
     head = head or ("✅ Qidiruv tugadi" if manual else "☀️ Bugungi qidiruv")
     note = (f"{head}: {seen} ta yangi e'lon ko'rildi, {waiting} ta mos topilma dashboardda kutmoqda."
             if waiting else f"{head}: {seen} ta yangi e'lon ko'rildi, mos keladigan yangisi yo'q.")
@@ -251,12 +281,64 @@ async def run_cycle(bot: Bot, notify: bool = False, fast_only: bool = False, man
     if settings.mode != "finder" or not settings.admin_chat_id:
         return note
     if not manual and (not notify or (fast_only and waiting == 0)):
+        log_event("finder", "done", note, task_id)
         return ""
     if status is not None:
+        log_event("finder", "done", note, task_id)
         await status.edit_text(note, reply_markup=panel_markup())
     else:
-        await bot.send_message(settings.admin_chat_id, note, reply_markup=panel_markup())
+        await say("finder", note, kind="done", reply_markup=panel_markup(), task_id=task_id, fallback_bot=bot)
+    try:
+        await auto_write(bot, task_id)
+    except Exception:
+        log.exception("auto write failed")
     return note
+
+
+def learn_post(msg_id: int, html_text: str) -> None:
+    """A post we just published goes into the Monday list and GrantBek's knowledge right away."""
+    try:
+        from .weekly import remember_post
+        remember_post(db(), msg_id, datetime.utcnow(), re.sub(r"<[^>]+>", "", html_text or ""))
+    except Exception:
+        log.exception("could not remember the published post")
+
+
+async def auto_write(bot: Bot, task_id: int | None = None) -> int:
+    """Toshmat aka hands the strongest finds straight to Mirzo, so the posts are ready before anyone looks.
+    At most AUTO_WRITE_PER_DAY a day; you still tap "Chop etish" (or "Rad etish")."""
+    if not settings.auto_write_per_day or not settings.write_on_accept or settings.mode != "finder":
+        return 0
+    from .dashboard import _tz_offset
+    tz = _tz_offset()
+    done_today = db().conn.execute(
+        "SELECT COUNT(*) FROM items WHERE reason='auto: Toshmat aka' AND date(updated_at, ?) >= date('now', ?, '-0 days')",
+        (tz, tz)).fetchone()[0]
+    room = settings.auto_write_per_day - done_today
+    strong = [item for item, _ in ordered_finds() if (item["fit_score"] or 0) >= settings.auto_write_min_fit][:max(room, 0)]
+    if not strong:
+        return 0
+    mirzo, eshmat = AGENTS["writer"]["name"], AGENTS["finder"]["name"]
+    await say("manager", f"{eshmat} {len(strong)} ta kuchli grant topdi. {mirzo}, postlarini yoz: " +
+              ", ".join(escape(i["title"][:60], quote=False) for i in strong), kind="task", task_id=task_id, fallback_bot=bot)
+    for item in strong:
+        take(item, 0)
+        db().update(item["id"], reason="auto: Toshmat aka")
+        await write_and_send(bot, item["id"], settings.admin_chat_id, by="Toshmat aka (avto)")
+    return len(strong)
+
+
+def failing_sources() -> dict:
+    return {r["source"]: r["last_error"] for r in db().health()
+            if r["last_error_at"] and (not r["last_ok"] or r["last_error_at"] > r["last_ok"])}
+
+
+async def scheduled_search(bot: Bot, fast_only: bool = False) -> None:
+    """The daily search, unless Toshmat aka was told to pause it."""
+    if db().get_meta("paused"):
+        log_event("manager", "info", "Kunlik qidiruv to'xtatilgan, o'tkazib yuborildi")
+        return
+    await run_cycle(bot, True, fast_only)
 
 
 async def retry_errors(bot: Bot) -> dict:
@@ -396,8 +478,13 @@ async def on_take(cb: CallbackQuery, bot: Bot):
 async def write_and_send(bot: Bot, item_id: int, chat_id: int, reply_to: int | None = None, by: str = "") -> None:
     """Writes the channel post for a taken find and sends it with the publish buttons."""
     title = escape((db().get(item_id)["title"] or "")[:80])
-    note = await bot.send_message(chat_id, f"✍️ «{title}» uchun post yozilmoqda, ~20 soniya..."
-                                  + (f" (oldi: {escape(by)})" if by else ""), reply_to_message_id=reply_to)
+    task_id = db().add_task("write_post", "writer", {"item_id": item_id}, status="working",
+                            created_by="owner" if by else "manager")
+    writer = bot_for("writer", bot)
+    from .agents import tagged
+    note = await writer.send_message(chat_id, tagged("writer", f"«{title}» uchun post yozyapman, ~20 soniya...")
+                                     + (f" (oldi: {escape(by)})" if by else ""), reply_to_message_id=reply_to)
+    log_event("writer", "task", f"Post yozish: {title}", task_id)
     try:
         await asyncio.to_thread(STATE["pipeline"].write, db().get(item_id))
     except Exception as e:
@@ -407,7 +494,10 @@ async def write_and_send(bot: Bot, item_id: int, chat_id: int, reply_to: int | N
     if item["status"] == "drafted":
         await note.delete()
         await send_review(bot, item, reply_to=reply_to)
+        db().update_task(task_id, "done")
     else:
+        db().update_task(task_id, "failed", {"error": (item["reason"] or "")[:300]})
+        log_event("writer", "error", f"Post yozilmadi: {title}: {item['reason'] or ''}", task_id)
         db().update(item_id, status="accepted")   # still taken; only the writing failed
         await note.edit_text(
             f"❌ «{title}» uchun post yozilmadi: {escape(item['reason'] or '')[:200]}",
@@ -459,11 +549,17 @@ TEMP_DB_WARNING = ("\n\n⚠️ Railway'da volume ulanmagan: har yangilanishda st
 # ---------------------------------------------------------------- commands
 @router.message(Command("start", "help"))
 async def cmd_help(m: Message):
+    t = AGENTS
     await m.answer(
-        "EduGrants agenti.\n\n"
-        "Bu guruhga faqat kerakli narsalar keladi: tayyor postlar (✅ Chop etish tugmasi bilan) va kunlik qisqa xabar.\n\n"
-        "Qolgan hamma narsa dashboardda: topilmalar, ✅ Olamiz / ❌ Kerak emas, 🔎 hozir qidirish, xarajatlar, "
-        "manbalar va xatolar. Pastdagi «📈 Dashboard» tugmasini bosing.\n\n"
+        "EduGrants agentlari guruhi.\n\n"
+        f"{t['manager']['emoji']} <b>{t['manager']['name']}</b>: boshliq. Eng kuchli topilmalarni o'zi {t['writer']['name']}ga "
+        f"beradi (post tayyor bo'lib keladi, siz faqat «Chop etish»ni bosasiz), har kuni soat "
+        f"{settings.report_at or '—'} da hisobot beradi. Unga oddiy so'zlar bilan yozing, masalan: "
+        "<i>«bugun olimpiadalarni ko'proq top»</i>, <i>«hozir qidir»</i>, <i>«qidiruvni to'xtat»</i>.\n"
+        f"{t['finder']['emoji']} <b>{t['finder']['name']}</b>: grantlarni topadi va saralaydi (har kuni {settings.run_at}).\n"
+        f"{t['writer']['emoji']} <b>{t['writer']['name']}</b>: postlarni yozadi, dushanba kuni muddatlar ro'yxatini tayyorlaydi.\n"
+        f"{t['community']['emoji']} <b>{t['community']['name']}</b>: o'z botidagi xabarlarga va kanal izohlariga o'zi javob beradi, har tong bilimini yangilaydi.\n\n"
+        "/dashboard · /status · /report · /weekly\n\n"
         f"<i>Chat ID: <code>{m.chat.id}</code>, sizning ID: <code>{m.from_user.id}</code></i>",
         reply_markup=main_keyboard(),
     )
@@ -561,7 +657,7 @@ async def on_approve(cb: CallbackQuery, bot: Bot):
         return await cb.answer(f"Holati: {item['status'] if item else 'topilmadi'}", show_alert=True)
     db().update(item_id, status="publishing")
     try:
-        msg = await bot.send_message(settings.channel_id, item["post_text"])
+        msg = await bot_for("manager", bot).send_message(settings.channel_id, item["post_text"])
     except Exception as e:
         db().update(item_id, status="in_review")
         return await cb.answer(f"Kanalga yuborib bo'lmadi: {e}"[:190], show_alert=True)
@@ -574,6 +670,8 @@ async def on_approve(cb: CallbackQuery, bot: Bot):
         log.error("platform push failed for #%d: %s", item_id, e)
     db().update(item_id, status="published", channel_message_id=msg.message_id, platform_ref=ref,
                 reason=None if ref else "platform push failed")
+    log_event("writer", "done", f"Kanalda chop etildi: {item['title'][:80]}")
+    learn_post(msg.message_id, item["post_text"])
     await cb.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"✅ Chop etildi — {cb.from_user.first_name}", url=post_url)]]))
     await cb.answer("Chop etildi" + note)
@@ -605,11 +703,89 @@ async def on_edit(cb: CallbackQuery, bot: Bot):
 
 @router.message(F.reply_to_message)
 async def on_edit_reply(m: Message, bot: Bot):
-    item_id = STATE["pending_edits"].pop(m.reply_to_message.message_id, None)
-    if item_id is None or not allowed(m.from_user.id):
+    key = m.reply_to_message.message_id
+    if not allowed(m.from_user.id):
         return
+    if key in STATE["weekly_edits"]:            # a new text for the Monday list
+        task_id = STATE["weekly_edits"].pop(key)
+        t = db().task(task_id)
+        result = json.loads(t["result"] or "{}")
+        result["text"] = m.html_text
+        db().update_task(task_id, "waiting", result)
+        from .manager import weekly_markup
+        await say("writer", m.html_text, reply_markup=weekly_markup(task_id), log_it=False, fallback_bot=bot)
+        return
+    item_id = STATE["pending_edits"].pop(key, None)
+    if item_id is None:
+        return await on_order(m, bot)            # a reply that isn't an edit: treat it as a message to Toshmat aka
     db().update(item_id, post_text=m.html_text, status="drafted")
     await send_review(bot, db().get(item_id))
+
+
+# ---------------------------------------------------------------- the Monday list (Mirzo)
+@router.callback_query(F.data.startswith("wk:"))
+async def on_weekly(cb: CallbackQuery, bot: Bot):
+    if not allowed(cb.from_user.id):
+        return await cb.answer("Ruxsat yo'q", show_alert=True)
+    _, action, task_id = cb.data.split(":")
+    t = db().task(int(task_id))
+    if not t or t["status"] != "waiting":
+        return await cb.answer("Bu ro'yxat allaqachon hal qilingan")
+    text = json.loads(t["result"] or "{}").get("text", "")
+    if action == "pub":
+        try:
+            msg = await bot_for("manager", bot).send_message(settings.channel_id, text)
+        except Exception as e:
+            return await cb.answer(f"Kanalga yuborib bo'lmadi: {e}"[:190], show_alert=True)
+        url = f"https://t.me/{settings.channel_handle.lstrip('@')}/{msg.message_id}"
+        db().update_task(int(task_id), "done", {**json.loads(t["result"] or "{}"), "url": url})
+        learn_post(msg.message_id, text)
+        log_event("writer", "done", "Haftalik ro'yxat kanalda chop etildi", int(task_id))
+        await cb.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Chop etildi", url=url)]]))
+        await cb.answer("Chop etildi")
+    elif action == "no":
+        db().update_task(int(task_id), "cancelled")
+        log_event("writer", "info", "Haftalik ro'yxat bekor qilindi", int(task_id))
+        await cb.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Bekor qilindi", callback_data="noop")]]))
+        await cb.answer()
+    elif action == "ed":
+        await cb.answer()
+        prompt = await cb.message.answer("✏️ Matnni nusxa oling, tuzating va shu xabarga javob (reply) qilib yuboring:")
+        copy = await cb.message.answer(text, reply_markup=ForceReply(selective=True))
+        STATE["weekly_edits"][copy.message_id] = int(task_id)
+        STATE["weekly_edits"][prompt.message_id] = int(task_id)
+
+
+@router.message(Command("weekly"))
+async def cmd_weekly(m: Message):
+    if allowed(m.from_user.id):
+        from .manager import weekly_list
+        await weekly_list(created_by="owner")
+
+
+@router.message(Command("report"))
+async def cmd_report(m: Message):
+    if allowed(m.from_user.id):
+        from .manager import daily_report
+        await daily_report(created_by="owner")
+
+
+@router.message(Command("status"))
+async def cmd_status(m: Message):
+    if allowed(m.from_user.id):
+        from .manager import status_text
+        await say("manager", status_text(db()), fallback_bot=m.bot)
+
+
+# ---------------------------------------------------------------- orders to Toshmat aka in plain words
+@router.message(F.text & ~F.text.startswith("/"))
+async def on_order(m: Message, bot: Bot):
+    if not allowed(m.from_user.id) or m.chat.id != settings.admin_chat_id:
+        return
+    from .manager import handle_order
+    await handle_order(m.text, bot)
 
 
 @router.callback_query(F.data.startswith("pf:"))
@@ -630,6 +806,11 @@ async def on_noop(cb: CallbackQuery):
 def auto_import_history(database: DB) -> None:
     """On a fresh server the database is empty. If the channel export is in the project folder,
     load it once so nothing has to be typed on the server."""
+    if (not database.conn.execute("SELECT 1 FROM channel_posts WHERE text IS NOT NULL LIMIT 1").fetchone()
+            and settings.history_file.exists()):     # (re)filled once, now with the full text for GrantBek
+        from .weekly import import_export_posts
+        log.info("Monday list: %d past channel posts with deadlines",
+                 import_export_posts(database, settings.history_file))
     if database.history_rows():
         if not settings.profile_file.exists():  # profile deleted or never made: rebuild it from the database
             from .history import build_profile
@@ -648,8 +829,9 @@ def auto_import_history(database: DB) -> None:
 
 async def main() -> None:
     if not settings.bot_token:
-        raise SystemExit("Set BOT_TOKEN in .env")
+        raise SystemExit("BOT_TOKEN is missing (Railway: Variables; on your computer: .env)")
     STATE["db"] = DB(settings.db_path)
+    _DB["get"] = lambda: STATE["db"]
     log.info("database: %s", settings.db_path)
     if database_is_temporary():
         log.warning("NO RAILWAY VOLUME: the database is on the container's own disk and will be wiped at the next "
@@ -657,34 +839,60 @@ async def main() -> None:
     auto_import_history(STATE["db"])
     STATE["pipeline"] = Pipeline(STATE["db"])
     props = DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)
-    bot = Bot(settings.bot_token, default=props)
+    bots = setup_bots(lambda token: Bot(token, default=props))
+    bot = BOTS["manager"]
     dp = Dispatcher()
     dp.include_router(router)
+    from .community import router as community_router
+    dp.include_router(community_router)      # GrantBek: DMs to her bot and comments under our posts
 
     if settings.admin_chat_id:
+        from .manager import daily_report, weekly_list
         scheduler = AsyncIOScheduler(timezone=settings.timezone)
         if settings.run_at:
             hour, minute = (int(x) for x in settings.run_at.split(":"))
-            scheduler.add_job(run_cycle, "cron", hour=hour, minute=minute, args=[bot, True],
+            scheduler.add_job(scheduled_search, "cron", hour=hour, minute=minute, args=[bot],
                               max_instances=1, coalesce=True, misfire_grace_time=3600)
             when = f"daily at {settings.run_at} {settings.timezone}"
         else:
-            scheduler.add_job(run_cycle, "interval", hours=settings.run_every_hours, args=[bot, True],
+            scheduler.add_job(scheduled_search, "interval", hours=settings.run_every_hours, args=[bot],
                               next_run_time=datetime.now() + timedelta(minutes=1), max_instances=1, coalesce=True)
             when = f"every {settings.run_every_hours}h"
         if settings.fast_every_minutes > 0:  # optional extra Telegram-only checks
-            scheduler.add_job(run_cycle, "interval", minutes=settings.fast_every_minutes, args=[bot, True, True],
+            scheduler.add_job(scheduled_search, "interval", minutes=settings.fast_every_minutes, args=[bot, True],
                               max_instances=1, coalesce=True)
+        if settings.report_at:      # Toshmat aka's evening report
+            h, mi = (int(x) for x in settings.report_at.split(":"))
+            scheduler.add_job(daily_report, "cron", hour=h, minute=mi, max_instances=1, coalesce=True,
+                              misfire_grace_time=3600)
+        if settings.community_refresh_at:   # GrantBek re-reads the channel and relearns the week's questions
+            from .community import refresh_base
+            h, mi = (int(x) for x in settings.community_refresh_at.split(":"))
+            scheduler.add_job(refresh_base, "cron", hour=h, minute=mi, max_instances=1, coalesce=True,
+                              misfire_grace_time=3600)
+        if settings.weekly_at:      # Mirzo's Monday deadline list, e.g. "mon 08:30"
+            day, hm = settings.weekly_at.split()
+            h, mi = (int(x) for x in hm.split(":"))
+            scheduler.add_job(weekly_list, "cron", day_of_week=day, hour=h, minute=mi, max_instances=1, coalesce=True,
+                              misfire_grace_time=6 * 3600)
         scheduler.start()
         STATE["scheduler"] = scheduler
-        log.info("bot started; search %s (use /find to search now)", when)
+        log.info("team started (%s); search %s", ", ".join(a for a in AGENTS if a in BOTS), when)
     else:
-        log.warning("ADMIN_CHAT_ID not set: setup mode. Add the bot to your editors group, send /help "
-                    "there, put the chat id in .env and restart.")
+        log.warning("ADMIN_CHAT_ID not set: setup mode. Add the bot to your agents group, send /help "
+                    "there, put the chat id in the variables and restart.")
     await bot.set_my_commands([
         BotCommand(command="dashboard", description="Dashboardni ochish"),
+        BotCommand(command="status", description="Jamoa holati"),
+        BotCommand(command="report", description="Hisobot hozir"),
+        BotCommand(command="weekly", description="Haftalik muddatlar ro'yxati"),
         BotCommand(command="help", description="Yordam"),
     ])
     from .dashboard import start as start_dashboard
     await start_dashboard(lambda: STATE["db"], bot)
-    await dp.start_polling(bot)
+    if settings.admin_chat_id:
+        own = [f"{AGENTS[a]['emoji']} {AGENTS[a]['name']}" + (
+            "" if a in BOTS else " (o'z boti hali yo'q, ishlamaydi)" if a == "community" else " (Toshmat akaning boti orqali)")
+            for a in AGENTS]
+        await say("manager", "Jamoa ishga tushdi: " + ", ".join(own), kind="info")
+    await dp.start_polling(*bots)

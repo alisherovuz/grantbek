@@ -65,6 +65,9 @@ def setup(monkeypatch, delay=0):
     monkeypatch.setattr(settings, "admin_chat_id", -100)
     monkeypatch.setattr(settings, "admin_user_ids", {7})
     monkeypatch.setattr(settings, "mode", "finder")
+    from edugrants_agent import agents
+    agents.BOTS.clear()
+    agents._DB["get"] = lambda: botmod.STATE["db"]
     botmod.STATE.update(db=DB(":memory:"), pipeline=FakePipeline(delay), lock=asyncio.Lock(),
                         push_lock=asyncio.Lock())
 
@@ -104,7 +107,8 @@ def test_daily_run_always_reports(monkeypatch):
     setup(monkeypatch)
     b = FakeBot()
     asyncio.run(botmod.run_cycle(b, notify=True))
-    assert len(b.sent) == 1 and b.sent[0][1].startswith("☀️ Bugungi qidiruv: 12 ta yangi e'lon ko'rildi, mos")
+    assert len(b.sent) == 1 and "☀️ Bugungi qidiruv: 12 ta yangi e'lon ko'rildi, mos" in b.sent[0][1]
+    assert b.sent[0][1].startswith("🔎 <b>Eshmat</b>:")        # no own bot yet: tagged message
 
 
 def test_check_reports_instead_of_crashing(monkeypatch, tmp_path, capsys):
@@ -143,22 +147,35 @@ def test_bot_main_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "db_path", tmp_path / "b.db")
     monkeypatch.setattr(settings, "history_file", tmp_path / "none.html")
     monkeypatch.setenv("DASHBOARD_PORT", "0")   # any free port
+    monkeypatch.setenv("FINDER_BOT_TOKEN", "654321:ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsr")   # Eshmat has his own bot
+    monkeypatch.delenv("WRITER_BOT_TOKEN", raising=False)                                  # Mirzo doesn't (yet)
     started = {}
 
     async def fake_commands(self, commands, **k):
         started["commands"] = [c.command for c in commands]
         return True
 
-    async def fake_polling(self, bot, **k):
-        started["parse_mode"] = bot.default.parse_mode
-        started["no_preview"] = bot.default.link_preview_is_disabled
+    async def fake_polling(self, *bots, **k):
+        started["bots"] = len(bots)
+        started["parse_mode"] = bots[0].default.parse_mode
+        started["no_preview"] = bots[0].default.link_preview_is_disabled
 
     monkeypatch.setattr(Bot, "set_my_commands", fake_commands)
+
+    async def fake_send(self, chat_id, text, **k):
+        started.setdefault("said", []).append(text)
+    monkeypatch.setattr(Bot, "send_message", fake_send)
     monkeypatch.setattr(Dispatcher, "start_polling", fake_polling)
     monkeypatch.setattr(botmod, "Pipeline", lambda db: FakePipeline())
     asyncio.run(botmod.main())
-    assert started == {"commands": ["dashboard", "help"],
+    said = started.pop("said")
+    assert started == {"commands": ["dashboard", "status", "report", "weekly", "help"], "bots": 2,
                        "parse_mode": "HTML", "no_preview": True}
+    assert said and said[0].startswith("Jamoa ishga tushdi") and "Mirzo (Toshmat akaning boti orqali)" in said[0]
+    from edugrants_agent import agents
+    assert agents.BOTS["finder"] is not agents.BOTS["manager"] and "writer" not in agents.BOTS
+    assert agents.bot_for("writer") is agents.BOTS["manager"]
+    agents.BOTS.clear()
 
 
 
@@ -224,6 +241,7 @@ def add_finds(d, n, dl_days=60):
 def test_search_reports_with_a_dashboard_button(monkeypatch):
     """Finds live on the dashboard now: the search only reports how many and links there."""
     setup(monkeypatch)
+    monkeypatch.setattr(settings, "auto_write_per_day", 0)
     monkeypatch.setenv("DASHBOARD_URL", "https://grantbek.example")
     add_finds(botmod.STATE["db"], 12)
     b = FakeBot()
@@ -329,3 +347,28 @@ def test_masters_only_is_dropped_unless_the_channel_posted_it_before(monkeypatch
     assert level_reason({"level": ["bachelor", "master"]}, 2) is None                    # bachelors too: normal rules
     monkeypatch.setattr(settings, "grad_only_min_fit", 0)
     assert level_reason({"level": ["phd"]}, 1) is None
+
+
+def test_strong_finds_are_written_without_anyone_pressing_a_button(monkeypatch):
+    """Eshmat finds, Toshmat aka hands the strongest to Mirzo, the post arrives ready to publish."""
+    setup(monkeypatch)
+    monkeypatch.setattr(settings, "write_on_accept", True)
+    monkeypatch.setattr(settings, "auto_write_per_day", 2)
+    monkeypatch.setattr(settings, "auto_write_min_fit", 5)
+    d = botmod.STATE["db"]
+    ids = add_finds(d, 4)
+    for i in ids[:3]:
+        d.update(i, fit_score=5)                       # three strong, one ordinary
+
+    class Writer(FakePipeline):
+        def write(self, item):
+            d.update(item["id"], status="drafted", post_text=f"<b>{item['title']}</b>", platform_json={})
+    botmod.STATE["pipeline"] = Writer()
+    b = FakeBot()
+    asyncio.run(botmod.run_cycle(b, notify=True))
+    texts = [t for _, t in b.sent]
+    assert any("Mirzo, postlarini yoz" in t for t in texts)                        # the boss hands it over
+    assert len([t for t in texts if t.startswith("<b>Find") or "━━" in t]) == 2     # two posts, ready to publish
+    assert len([i for i in ids if d.get(i)["status"] == "in_review"]) == 2          # only AUTO_WRITE_PER_DAY
+    asyncio.run(botmod.run_cycle(b, notify=True))                                  # a second search the same day
+    assert len([i for i in ids if d.get(i)["status"] == "in_review"]) == 2          # the daily limit holds

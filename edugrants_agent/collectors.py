@@ -260,13 +260,14 @@ def message_urls(msg) -> list[str]:
     return list(dict.fromkeys(u.rstrip(".,") for u in urls))
 
 
-async def read_channels(client, channels: list[str], db: DB, limit: int, max_age_days: float):
-    """Yields (handle, message) for posts newer than the last run and not older than max_age_days."""
+async def read_channels(client, channels: list[str], db: DB, limit: int, max_age_days: float, from_start: bool = False):
+    """Yields (handle, message) for posts newer than the last run and not older than max_age_days
+    (from_start: ignore the last run, e.g. to fill the Monday list once)."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
     for channel in channels:
         handle = channel.lstrip("@")
         key = f"tg:{handle.lower()}"
-        last_id = int(db.page_hash(key) or 0)
+        last_id = 0 if from_start else int(db.page_hash(key) or 0)
         newest = last_id
         async for msg in client.iter_messages(channel, limit=limit, min_id=last_id):
             newest = max(newest, msg.id)
@@ -298,6 +299,8 @@ def handle_telegram_posts(src: dict, db: DB, posts, skip_keywords: list[str]) ->
             db.add_competitor_post("@" + handle, canonical_url(post_url), when or "", title,
                                    normalize_text(text), urls)
         elif role == "own":
+            from .weekly import remember_post
+            remember_post(db, msg.id, msg.date.replace(tzinfo=None) if msg.date else None, text)   # for the Monday list
             if OPP_RE.search(text):
                 db.history_mark_posted(normalize_title(title), title, (when or "")[:10],
                                        next((u for u in urls if "edugrants.uz" not in u), None))
@@ -310,15 +313,23 @@ def handle_telegram_posts(src: dict, db: DB, posts, skip_keywords: list[str]) ->
 
 
 def collect_telegram(src: dict, db: DB, skip_keywords: list[str], client_factory=None) -> list[Candidate]:
+    # Our own channel, the first time: read back 60 days so the Monday list knows recent deadlines
+    backfill = src.get("role") == "own" and not db.get_meta("own_channel_backfilled")
+
     async def run():
         posts = []
         async with (client_factory or tg_client)() as client:
-            async for item in read_channels(client, src["channels"], db, int(src.get("limit", 50)),
-                                            float(src.get("max_age_days", 2))):
+            async for item in read_channels(client, src["channels"], db,
+                                            400 if backfill else int(src.get("limit", 50)),
+                                            60 if backfill else float(src.get("max_age_days", 2)),
+                                            from_start=backfill):
                 posts.append(item)
         return posts
 
-    return handle_telegram_posts(src, db, asyncio.run(run()), skip_keywords)
+    out = handle_telegram_posts(src, db, asyncio.run(run()), skip_keywords)
+    if backfill:
+        db.set_meta("own_channel_backfilled", True)
+    return out
 
 
 def collect_imap(src: dict, skip_keywords: list[str]) -> list[Candidate]:

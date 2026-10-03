@@ -177,7 +177,7 @@ def test_search_button_and_system_panel(monkeypatch):
         await asyncio.sleep(0.5)
         sysinfo = await (await client.get("/api/system", headers=k)).json()
         assert sysinfo["searching"] is False and sysinfo["last_search"]["seen"] == 7
-        assert sent and sent[0].startswith("🔎 Dashboarddan qidiruv: 7 ta yangi e'lon")
+        assert sent and "🔎 Dashboarddan qidiruv: 7 ta yangi e'lon" in sent[0]
     run(check, bot=B())
 
 

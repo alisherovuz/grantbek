@@ -211,6 +211,10 @@ class Pipeline:
     # ------------------------------------------------------------------ 2
     def triage(self, batch_size: int = 20) -> None:
         audience = self.config.get("audience", "") + "\n" + hard_rules_text()
+        from .manager import focus_text
+        focus = focus_text(self.db)
+        if focus:   # what the owner asked Toshmat aka for this week
+            audience += f"\nTHIS WEEK THE OWNER ASKED FOR MORE OF: {focus}. Score matching items one point higher."
         profile = settings.profile_file.read_text(encoding="utf-8") if settings.profile_file.exists() else ""
         feedback = self.db.feedback_examples()
         new = self.db.by_status("new", limit=settings.max_process_per_run * 3)
