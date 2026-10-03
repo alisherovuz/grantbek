@@ -19,6 +19,7 @@ from aiogram.types import (BotCommand, CallbackQuery, ForceReply, InlineKeyboard
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .config import settings
+from .dashboard import MANUAL_REASON, dashboard_url
 from .db import DB
 from .pipeline import AGGREGATOR_DOMAINS, Pipeline, format_gaps, level_reason
 from .publish import push_to_platform
@@ -114,12 +115,13 @@ def ordered_finds(limit: int | None = None) -> list[tuple]:
         if _expired(r):
             db().update(r["id"], status="rejected", reason="deadline too close (waited in the queue)")
             continue
-        gaps = format_gaps(json.loads(r["data_json"] or "{}"), r["official_url"], STATE["pipeline"].aggregators
-                           if hasattr(STATE["pipeline"], "aggregators") else AGGREGATOR_DOMAINS)
+        manual = r["reason"] == MANUAL_REASON   # an editor put it back from the dashboard: no automatic checks
+        gaps = [] if manual else format_gaps(json.loads(r["data_json"] or "{}"), r["official_url"],
+                                             getattr(STATE["pipeline"], "aggregators", AGGREGATOR_DOMAINS))
         if gaps:   # finds queued before the format check existed
             db().update(r["id"], status="rejected", reason=f"post format: {', '.join(gaps)}")
             continue
-        lvl = level_reason(json.loads(r["data_json"] or "{}"), r["fit_score"])
+        lvl = None if manual else level_reason(json.loads(r["data_json"] or "{}"), r["fit_score"])
         if lvl:    # queued before the master's rule existed
             db().update(r["id"], status="rejected", reason=lvl)
             continue
@@ -422,11 +424,23 @@ async def on_skip_reason(cb: CallbackQuery):
 async def cmd_help(m: Message):
     await m.answer(
         "EduGrants agenti.\n\n"
-        f"{SEARCH_TEXT} tugmasi yoki /find — hozir qidirish\n{BROWSE_TEXT} tugmasi yoki /list — navbatdagi topilmalar (⬅️ ➡️ bilan varaqlang)\n/panel — qidirish tugmasini guruhda qadab qo'yish\n/profile — kanal profili\n/queue — navbat holati\n/stats — 30 kunlik statistika va xarajat\n"
+        f"{SEARCH_TEXT} tugmasi yoki /find — hozir qidirish\n{BROWSE_TEXT} tugmasi yoki /list — navbatdagi topilmalar (⬅️ ➡️ bilan varaqlang)\n/panel — qidirish tugmasini guruhda qadab qo'yish\n/profile — kanal profili\n/queue — navbat holati\n/stats — 30 kunlik statistika va xarajat\n/dashboard — agent nimani o'tkazdi va nimani tashladi\n"
         "/health — manbalar holati\n/errors — oxirgi xatolar\n/retry — xato bo'lganlarni qayta urinish\n\n"
         f"Chat ID: <code>{m.chat.id}</code>, sizning ID: <code>{m.from_user.id}</code>",
         reply_markup=main_keyboard(),
     )
+
+
+@router.message(Command("dashboard"))
+async def cmd_dashboard(m: Message):
+    if not allowed(m.from_user.id):
+        return
+    url = dashboard_url()
+    await m.answer("📈 Agent tekshirgan grantlar: nimani o'tkazdi, nimani tashladi va nega.",
+                   reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📈 Dashboardni ochish", url=url)]])
+                   if url.startswith("https://") else None)
+    if not url.startswith("https://"):
+        await m.answer(f"Havola (faqat shu kompyuterda ochiladi): {escape(url)}")
 
 
 @router.message(Command("profile"))
@@ -643,7 +657,10 @@ async def main() -> None:
         BotCommand(command="list", description="Navbatdagi topilmalar"),
         BotCommand(command="panel", description="Qidirish tugmasini qadash"),
         BotCommand(command="stats", description="Statistika"),
+        BotCommand(command="dashboard", description="Agent dashboardi"),
         BotCommand(command="health", description="Manbalar holati"),
         BotCommand(command="help", description="Yordam"),
     ])
+    from .dashboard import start as start_dashboard
+    await start_dashboard(lambda: STATE["db"], bot)
     await dp.start_polling(bot)

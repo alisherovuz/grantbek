@@ -264,9 +264,11 @@ class DB:
 
     def feedback_examples(self, limit: int = 20) -> dict[str, list[str]]:
         out = {}
-        for status in ("accepted", "skipped"):
-            rows = self.conn.execute("SELECT title, reason FROM items WHERE status=? ORDER BY updated_at DESC LIMIT ?",
-                                     (status, limit)).fetchall()
+        groups = {"accepted": ("accepted", "drafted", "in_review", "published", "declined"), "skipped": ("skipped",)}
+        for status, statuses in groups.items():
+            rows = self.conn.execute(
+                f"SELECT title, reason FROM items WHERE status IN ({','.join('?' * len(statuses))})"
+                " ORDER BY updated_at DESC LIMIT ?", (*statuses, limit)).fetchall()
             out[status] = [r["title"] + (f" ({r['reason']})" if status == "skipped" and r["reason"] else "") for r in rows]
         return out
 

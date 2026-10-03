@@ -142,6 +142,7 @@ def test_bot_main_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "admin_chat_id", -100)
     monkeypatch.setattr(settings, "db_path", tmp_path / "b.db")
     monkeypatch.setattr(settings, "history_file", tmp_path / "none.html")
+    monkeypatch.setenv("DASHBOARD_PORT", "0")   # any free port
     started = {}
 
     async def fake_commands(self, commands, **k):
@@ -156,7 +157,7 @@ def test_bot_main_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(Dispatcher, "start_polling", fake_polling)
     monkeypatch.setattr(botmod, "Pipeline", lambda db: FakePipeline())
     asyncio.run(botmod.main())
-    assert started == {"commands": ["find", "list", "panel", "stats", "health", "help"],
+    assert started == {"commands": ["find", "list", "panel", "stats", "dashboard", "health", "help"],
                        "parse_mode": "HTML", "no_preview": True}
 
 
