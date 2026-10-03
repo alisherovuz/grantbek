@@ -221,7 +221,7 @@ def check_end_to_end(r: Report, config: dict, history_rows: list, fresh: list, n
 
 
 # --------------------------------------------------------------------------- entry
-VERSION = "2026-10-03n"
+VERSION = "2026-10-03o"
 
 
 def run_check(n: int = 5) -> int:

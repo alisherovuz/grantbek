@@ -18,7 +18,7 @@ from aiogram.types import (BotCommand, CallbackQuery, ForceReply, InlineKeyboard
                            KeyboardButton, LinkPreviewOptions, Message, ReplyKeyboardMarkup)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from .config import settings
+from .config import database_is_temporary, settings
 from .dashboard import MANUAL_REASON, dashboard_url
 from .db import DB
 from .pipeline import AGGREGATOR_DOMAINS, Pipeline, format_gaps, level_reason
@@ -419,6 +419,9 @@ async def on_skip_reason(cb: CallbackQuery):
     await cb.answer()
 
 
+TEMP_DB_WARNING = ("\n\n⚠️ Railway'da volume ulanmagan: har yangilanishda statistika va topilmalar nolga tushadi. "
+                   "Railway → service → Cmd+K → Volume → mount path /app/data.")
+
 # ---------------------------------------------------------------- commands
 @router.message(Command("start", "help"))
 async def cmd_help(m: Message):
@@ -478,6 +481,7 @@ async def cmd_stats(m: Message):
         f"Navbatda kutmoqda: {c.get('extracted', 0)} ({BROWSE_TEXT})\n"
         f"Olindi: {taken}\nKerak emas: {c.get('skipped', 0)}\n"
         f"AI xarajati: ~${s['cost_usd']} ({s['tokens_in']:,} in / {s['tokens_out']:,} out tokens)"
+        + (TEMP_DB_WARNING if database_is_temporary() else "")
     )
 
 
@@ -626,6 +630,10 @@ async def main() -> None:
     if not settings.bot_token:
         raise SystemExit("Set BOT_TOKEN in .env")
     STATE["db"] = DB(settings.db_path)
+    log.info("database: %s", settings.db_path)
+    if database_is_temporary():
+        log.warning("NO RAILWAY VOLUME: the database is on the container's own disk and will be wiped at the next "
+                    "deploy. Add a volume (Cmd+K > Volume, mount path /app/data) to keep statistics and finds.")
     auto_import_history(STATE["db"])
     STATE["pipeline"] = Pipeline(STATE["db"])
     props = DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)

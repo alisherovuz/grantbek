@@ -346,3 +346,18 @@ def test_reset_forgets_finds_but_keeps_channel_history(monkeypatch, tmp_path, ca
     db = DB(settings.db_path)
     assert db.conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0 and len(db.history_rows()) == 1
     assert "Forgot 1 finds" in capsys.readouterr().out
+
+
+def test_database_goes_on_the_railway_volume(monkeypatch):
+    from pathlib import Path
+    from edugrants_agent.config import database_is_temporary, database_path
+    for k in ("RAILWAY_VOLUME_MOUNT_PATH", "RAILWAY_PROJECT_ID", "DB_PATH"):
+        monkeypatch.delenv(k, raising=False)
+    assert database_path().name == "agent.db" and not database_is_temporary()      # on the Mac
+    monkeypatch.setenv("RAILWAY_PROJECT_ID", "p1")
+    assert database_is_temporary()                                                # Railway, no volume
+    monkeypatch.setenv("RAILWAY_VOLUME_MOUNT_PATH", "/data")
+    monkeypatch.setenv("DB_PATH", "data/agent.db")                                # pasted from the Mac's .env
+    assert database_path() == Path("/data/agent.db") and not database_is_temporary()
+    monkeypatch.setenv("DB_PATH", "/data/grants/agent.db")
+    assert database_path() == Path("/data/grants/agent.db")

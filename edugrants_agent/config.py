@@ -35,6 +35,25 @@ def _float(name: str, default: float) -> float:
     return float(_env(name, str(default)))
 
 
+def on_railway() -> bool:
+    return bool(os.getenv("RAILWAY_PROJECT_ID") or os.getenv("RAILWAY_ENVIRONMENT_NAME"))
+
+
+def database_path() -> Path:
+    """Where the database lives. On Railway, a container's own disk is wiped on every deploy, so the
+    database must sit on the attached volume: if one is attached, it is used wherever it is mounted."""
+    volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
+    configured = _env("DB_PATH")
+    if volume and not (configured and Path(configured).is_absolute() and configured.startswith(volume.rstrip("/") + "/")):
+        return Path(volume) / "agent.db"
+    return Path(configured) if configured else ROOT / "data" / "agent.db"
+
+
+def database_is_temporary() -> bool:
+    """True on Railway without a volume: everything is forgotten at the next deploy."""
+    return on_railway() and not os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
+
+
 @dataclass
 class Settings:
     anthropic_api_key: str | None = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
@@ -57,7 +76,7 @@ class Settings:
     channel_id: str = field(default_factory=lambda: _env("CHANNEL_ID", "@EduGrandsUz"))
     channel_handle: str = field(default_factory=lambda: _env("CHANNEL_HANDLE", "@EduGrandsUz"))
 
-    db_path: Path = field(default_factory=lambda: Path(_env("DB_PATH", str(ROOT / "data" / "agent.db"))))
+    db_path: Path = field(default_factory=lambda: database_path())
     sources_file: Path = field(default_factory=lambda: Path(_env("SOURCES_FILE", str(ROOT / "config" / "sources.yaml"))))
     options_file: Path = field(default_factory=lambda: Path(_env("OPTIONS_FILE", str(ROOT / "config" / "platform_options.yaml"))))
 
