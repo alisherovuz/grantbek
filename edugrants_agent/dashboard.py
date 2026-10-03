@@ -319,6 +319,60 @@ async def api_action(request: web.Request) -> web.Response:
     return web.json_response({"error": "noma'lum amal"}, status=400)
 
 
+def system(db) -> dict:
+    """Search status, source health and errors: what used to be /health, /errors and /stats in Telegram."""
+    from .bot import STATE, next_search_at
+    last = db.get_meta("last_search") or {}
+    sources = []
+    for r in db.health():
+        bad = bool(r["last_error_at"] and (not r["last_ok"] or r["last_error_at"] > r["last_ok"]))
+        sources.append({"name": r["source"], "ok": not bad, "items": r["items_last_run"] or 0,
+                        "last_ok": local_time(r["last_ok"]) if r["last_ok"] else None,
+                        "error": (r["last_error"] or "")[:160] if bad else ""})
+    errors = [{"id": r["id"], "title": r["title"][:90], "why": reason_uz(r["reason"]) if (r["reason"] or "").startswith("write:")
+               else (r["reason"] or "")[:160]} for r in db.by_status("error", limit=30)]
+    lock = STATE.get("lock")
+    return {"searching": bool(lock and lock.locked()),
+            "search_started": local_time(db.get_meta("search_started")) if db.get_meta("search_started") else None,
+            "last_search": {**last, "at": local_time(last["at"])} if last.get("at") else None,
+            "next_search": next_search_at(), "run_at": settings.run_at,
+            "sources": sources, "errors": errors}
+
+
+async def api_system(request: web.Request) -> web.Response:
+    if not _authorized(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    return web.json_response(system(request.app[DB_KEY]()))
+
+
+async def api_search(request: web.Request) -> web.Response:
+    """🔎 Hozir qidirish from the dashboard. The short report still goes to the Telegram group."""
+    if not _authorized(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    from .bot import STATE, run_cycle
+    if STATE["lock"].locked():
+        return web.json_response({"error": "Qidiruv allaqachon ketmoqda"}, status=409)
+    bot = request.app.get(BOT_KEY)
+
+    async def go():
+        try:
+            await run_cycle(bot, notify=True, head="🔎 Dashboarddan qidiruv")
+        except Exception:
+            log.exception("search from dashboard failed")
+    asyncio.create_task(go())
+    await asyncio.sleep(0.05)   # let it take the lock, so the page sees "searching"
+    return web.json_response({"ok": True, "message": "Qidiruv boshlandi, odatda 2-5 daqiqa"})
+
+
+async def api_retry(request: web.Request) -> web.Response:
+    if not _authorized(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    from .bot import retry_errors
+    r = await retry_errors(request.app.get(BOT_KEY))
+    return web.json_response({"ok": True, "message": f"Qayta navbatga: {r['requeued']} · post yozildi: {r['written']}"
+                                                     + (f" · yana xato: {r['failed']}" if r["failed"] else "")})
+
+
 async def health(request: web.Request) -> web.Response:
     return web.Response(text="ok")
 
@@ -330,6 +384,9 @@ def make_app(db_getter, bot=None) -> web.Application:
     app.router.add_get("/", page)
     app.router.add_get("/api/data", api_data)
     app.router.add_post("/api/action", api_action)
+    app.router.add_get("/api/system", api_system)
+    app.router.add_post("/api/search", api_search)
+    app.router.add_post("/api/retry", api_retry)
     app.router.add_get("/health", health)
     return app
 

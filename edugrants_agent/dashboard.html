@@ -33,6 +33,23 @@
   .rule { font-size: 12.5px; padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
   .rule.off { background: var(--warn-soft); color: var(--warn); }
   .chip.school { background: var(--accent-soft); color: var(--accent); }
+  .nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 18px 0 16px; }
+  .nav button { font: inherit; font-size: 14.5px; background: none; border: 0; color: var(--muted); padding: 8px 12px;
+                cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+  @media (max-width: 560px) { .nav { flex-wrap: wrap; } .nav #days { order: -1; width: 100%; margin-bottom: 8px; } .nav > span { display: none; } }
+  .nav button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
+  .nav .dot { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff;
+              font-size: 11.5px; line-height: 18px; text-align: center; margin-left: 4px; }
+  header > div:first-child { flex: 1 1 380px; min-width: 0; }
+  .headright { flex: 0 1 300px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .searchline { color: var(--muted); font-size: 12.5px; text-align: right; }
+  @media (max-width: 560px) { .headright { align-items: stretch; width: 100%; } .searchline { text-align: left; } }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; }
+  .box h2 { font-size: 14px; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+  .row:first-of-type { border-top: 0; }
+  .ok { color: var(--accent); } .bad { color: var(--bad); }
+  .pane[hidden] { display: none; }
   .funnel { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 18px 0 8px; }
   .step { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
   .step b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
@@ -115,19 +132,31 @@
       <div class="sub">Agent tekshirgan va asosiy talablarga mos grantlar</div>
       <div class="rules" id="rules"></div>
     </div>
-    <select id="days" aria-label="Davr">
+    <div class="headright">
+      <button class="btn primary" id="searchBtn">🔎 Hozir qidirish</button>
+      <div class="searchline" id="searchLine"></div>
+    </div>
+  </header>
+
+  <nav class="nav" role="tablist">
+    <button role="tab" data-pane="grants" aria-selected="true">Grantlar</button>
+    <button role="tab" data-pane="money" aria-selected="false">Xarajat</button>
+    <button role="tab" data-pane="system" aria-selected="false">Tizim <span id="errDot"></span></button>
+    <span style="flex:1"></span>
+    <select id="days" aria-label="Davr" style="margin-bottom:6px">
       <option value="3">Oxirgi 3 kun</option>
       <option value="7">Oxirgi 7 kun</option>
       <option value="14" selected>Oxirgi 14 kun</option>
       <option value="30">Oxirgi 30 kun</option>
       <option value="90">Oxirgi 90 kun</option>
     </select>
-  </header>
+  </nav>
+
+  <section class="pane" id="pane-grants">
 
   <div class="funnel" id="funnel"></div>
   <p class="note">«Vibe filtri»: AI sarlavha va qisqa matnni o'qib, kanalga mos emas deb tashlaganlar. Ular uchun O'zbekiston va muddat tekshirilmagan, shuning uchun pastdagi ro'yxatda yo'q.</p>
 
-  <div class="costs" id="costs"></div>
   <div class="reasons" id="reasons" hidden></div>
 
   <div class="tabs" id="tabs"></div>
@@ -140,6 +169,16 @@
     </select>
   </div>
   <div id="list"></div>
+  </section>
+
+  <section class="pane" id="pane-money" hidden>
+    <div class="costs" id="costs"></div>
+  </section>
+
+  <section class="pane" id="pane-system" hidden>
+    <div class="box" id="errorsBox"></div>
+    <div class="box" id="sourcesBox"></div>
+  </section>
 </div>
 <div class="toast" id="toast" role="status"></div>
 
@@ -285,7 +324,66 @@ function render() {
     : [el("div", { class: "empty", text: "Bu bo'limda hozircha hech narsa yo'q." })]));
 }
 
+// ---- tabs at the top
+document.querySelectorAll(".nav [role=tab]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".nav [role=tab]").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+  document.querySelectorAll(".pane").forEach(p => p.hidden = p.id !== "pane-" + b.dataset.pane);
+}));
+
+// ---- search status, sources, errors (what used to be Telegram commands)
+let SYS = null, polling = null;
+async function loadSystem() {
+  const r = await fetch("/api/system", { headers: { "X-Key": KEY } });
+  if (!r.ok) return;
+  const was = SYS && SYS.searching;
+  SYS = await r.json();
+  renderSystem();
+  if (SYS.searching && !polling) polling = setInterval(loadSystem, 5000);
+  if (!SYS.searching && polling) { clearInterval(polling); polling = null; }
+  if (was && !SYS.searching) { toast("✅ Qidiruv tugadi"); load(); }
+}
+
+function renderSystem() {
+  const s = SYS, btn = $("searchBtn");
+  btn.disabled = s.searching;
+  btn.textContent = s.searching ? "⏳ Qidirilmoqda..." : "🔎 Hozir qidirish";
+  const parts = [];
+  if (s.searching) parts.push("boshlandi: " + (s.search_started || ""));
+  else if (s.last_search) parts.push(`Oxirgi qidiruv: ${s.last_search.at} · ${s.last_search.seen} ta yangi e'lon · ${s.last_search.waiting} ta mos`);
+  if (s.next_search) parts.push("keyingisi: " + s.next_search);
+  $("searchLine").textContent = parts.join(" · ");
+
+  $("errDot").replaceChildren(...(s.errors.length ? [el("span", { class: "dot", text: String(s.errors.length) })] : []));
+  const eb = $("errorsBox");
+  const head = el("h2", {}, el("span", { text: "⚠️ Xatolar" }));
+  if (s.errors.length) head.append(el("button", { class: "btn", text: "🔁 Hammasini qayta urinish", onclick: async (e) => {
+    e.target.disabled = true;
+    const r = await fetch("/api/retry", { method: "POST", headers: { "X-Key": KEY } });
+    const out = await r.json().catch(() => ({})); toast(out.message || out.error || "Xato"); loadSystem(); load();
+  } }));
+  eb.replaceChildren(head, ...(s.errors.length ? s.errors.map(x => el("div", { class: "row" },
+      el("span", { text: x.title }), el("span", { class: "bad", text: x.why })))
+    : [el("div", { class: "muted", text: "Xato yo'q 👌" })]));
+
+  const sb = $("sourcesBox");
+  const bad = s.sources.filter(x => !x.ok).length;
+  sb.replaceChildren(el("h2", {}, el("span", { text: `📡 Manbalar (${s.sources.length} ta${bad ? ", " + bad + " tasida muammo" : ""})` })),
+    ...(s.sources.length ? s.sources.map(x => el("div", { class: "row" },
+      el("span", { text: (x.ok ? "🟢 " : "🔴 ") + x.name }),
+      el("span", { class: x.ok ? "muted" : "bad", text: x.ok ? `oxirgi safar ${x.items} ta e'lon` + (x.last_ok ? " · " + x.last_ok : "") : x.error })))
+      : [el("div", { class: "muted", text: "Hali qidiruv bo'lmagan." })]));
+}
+
+$("searchBtn").addEventListener("click", async () => {
+  $("searchBtn").disabled = true;
+  const r = await fetch("/api/search", { method: "POST", headers: { "X-Key": KEY } });
+  const out = await r.json().catch(() => ({}));
+  toast(out.message || out.error || "Xato");
+  loadSystem();
+});
+
 $("days").addEventListener("change", load);
+loadSystem();
 $("q").addEventListener("input", render);
 $("sort").addEventListener("change", render);
 load();

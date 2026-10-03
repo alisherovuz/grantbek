@@ -231,17 +231,19 @@ async def on_browse_skip_reason(cb: CallbackQuery):
 
 
 async def run_cycle(bot: Bot, notify: bool = False, fast_only: bool = False, manual: bool = False,
-                    status: Message | None = None) -> str:
+                    status: Message | None = None, head: str | None = None) -> str:
     """Searches, then reports in one short message with a button to the dashboard, where the finds are.
     (`status`: the "Qidirilmoqda..." message to turn into the report.)"""
     if STATE["lock"].locked():
         return "⏳ Qidiruv allaqachon ketmoqda, tugashini kuting."
     async with STATE["lock"]:
+        db().set_meta("search_started", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
         result = await asyncio.to_thread(STATE["pipeline"].run, fast_only)
         sent = await push_drafts(bot) if settings.mode != "finder" else 0
     seen = result["added"]
     waiting = len(ordered_finds()) if settings.mode == "finder" else sent
-    head = "✅ Qidiruv tugadi" if manual else "☀️ Bugungi qidiruv"
+    db().set_meta("last_search", {"at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), "seen": seen, "waiting": waiting})
+    head = head or ("✅ Qidiruv tugadi" if manual else "☀️ Bugungi qidiruv")
     note = (f"{head}: {seen} ta yangi e'lon ko'rildi, {waiting} ta mos topilma dashboardda kutmoqda."
             if waiting else f"{head}: {seen} ta yangi e'lon ko'rildi, mos keladigan yangisi yo'q.")
     try:
@@ -260,6 +262,34 @@ async def run_cycle(bot: Bot, notify: bool = False, fast_only: bool = False, man
     return note
 
 
+async def retry_errors(bot: Bot) -> dict:
+    """Errors get another chance: failed reads go back in line, failed posts are written again now."""
+    rows = db().by_status("error")
+    posts = [r for r in rows if (r["reason"] or "").startswith("write:")]
+    for r in rows:
+        if r not in posts:
+            db().update(r["id"], status="triaged" if not r["data_json"] else "extracted", reason=None)
+    written = failed = 0
+    for r in posts:
+        db().update(r["id"], status="accepted", reason=None)
+        await asyncio.to_thread(STATE["pipeline"].write, db().get(r["id"]))
+        item = db().get(r["id"])
+        if item["status"] == "drafted":
+            await send_review(bot, item)
+            written += 1
+        else:
+            db().update(r["id"], status="accepted")
+            failed += 1
+    return {"requeued": len(rows) - len(posts), "written": written, "failed": failed}
+
+
+def next_search_at() -> str | None:
+    sched = STATE.get("scheduler")
+    jobs = sched.get_jobs() if sched else []
+    times = [j.next_run_time for j in jobs if j.next_run_time]
+    return min(times).strftime("%d.%m %H:%M") if times else None
+
+
 # ---------------------------------------------------------------- the buttons under the chat
 SEARCH_TEXT = "🔎 Hozir qidirish"
 STATS_TEXT = "📊 Statistika"
@@ -267,10 +297,8 @@ DASH_TEXT = "📈 Dashboard"
 
 
 def main_keyboard() -> ReplyKeyboardMarkup:
-    """Always-visible buttons at the bottom of the chat."""
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=SEARCH_TEXT), KeyboardButton(text=DASH_TEXT)],
-                                         [KeyboardButton(text=STATS_TEXT)]],
-                               resize_keyboard=True, is_persistent=True)
+    """The only button under the chat: everything else lives on the dashboard."""
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=DASH_TEXT)]], resize_keyboard=True, is_persistent=True)
 
 
 def dash_button() -> InlineKeyboardButton:
@@ -280,9 +308,7 @@ def dash_button() -> InlineKeyboardButton:
 
 
 def panel_markup() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=SEARCH_TEXT, callback_data="search"), dash_button(),
-    ], [InlineKeyboardButton(text=STATS_TEXT, callback_data="stats")]])
+    return InlineKeyboardMarkup(inline_keyboard=[[dash_button()]])
 
 
 async def manual_search(bot: Bot, chat_id: int, user_id: int) -> None:
@@ -339,13 +365,13 @@ async def on_stats_inline(cb: CallbackQuery):
 @router.message(Command("panel"))
 async def cmd_panel(m: Message, bot: Bot):
     """Posts and pins a message with the search button, so it is always one tap away."""
-    msg = await m.answer("📌 EduGrants Finder\nHar kuni soat " + (settings.run_at or "?") + " da avtomatik qidiradi. "
-                         "Istalgan vaqtda qidirish uchun tugmani bosing.", reply_markup=panel_markup())
+    msg = await m.answer("📌 EduGrants Finder\nHar kuni soat " + (settings.run_at or "?") + " da o'zi qidiradi. "
+                         "Topilmalar, qidirish va xarajatlar dashboardda.", reply_markup=panel_markup())
     try:
         await bot.pin_chat_message(m.chat.id, msg.message_id, disable_notification=True)
     except Exception:
         await m.answer("Xabarni qadash uchun botni guruhda admin qiling.")
-    await m.answer("Pastdagi tugmalar ham doim turadi 👇", reply_markup=main_keyboard())
+    await m.answer("Pastdagi tugma ham doim turadi 👇", reply_markup=main_keyboard())
 
 
 def take(item, user_id: int) -> None:
@@ -438,9 +464,10 @@ TEMP_DB_WARNING = ("\n\n⚠️ Railway'da volume ulanmagan: har yangilanishda st
 async def cmd_help(m: Message):
     await m.answer(
         "EduGrants agenti.\n\n"
-        f"{SEARCH_TEXT} tugmasi yoki /find — hozir qidirish\n{DASH_TEXT} tugmasi yoki /dashboard — topilmalar, ✅ Olamiz / ❌ Kerak emas, xarajatlar\n/panel — qidirish tugmasini guruhda qadab qo'yish\n/profile — kanal profili\n/queue — navbat holati\n/stats — 30 kunlik statistika va xarajat\n"
-        "/health — manbalar holati\n/errors — oxirgi xatolar\n/retry — xato bo'lganlarni qayta urinish\n\n"
-        f"Chat ID: <code>{m.chat.id}</code>, sizning ID: <code>{m.from_user.id}</code>",
+        "Bu guruhga faqat kerakli narsalar keladi: tayyor postlar (✅ Chop etish tugmasi bilan) va kunlik qisqa xabar.\n\n"
+        "Qolgan hamma narsa dashboardda: topilmalar, ✅ Olamiz / ❌ Kerak emas, 🔎 hozir qidirish, xarajatlar, "
+        "manbalar va xatolar. Pastdagi «📈 Dashboard» tugmasini bosing.\n\n"
+        f"<i>Chat ID: <code>{m.chat.id}</code>, sizning ID: <code>{m.from_user.id}</code></i>",
         reply_markup=main_keyboard(),
     )
 
@@ -450,7 +477,7 @@ async def cmd_dashboard(m: Message, user_id: int | None = None):
     if not allowed(user_id if user_id is not None else m.from_user.id):
         return
     url = dashboard_url()
-    text = "📈 Topilmalar, agent nimani tashlagani va xarajatlar: hammasi dashboardda."
+    text = "📈 Topilmalar, qidirish, xarajatlar, manbalar va xatolar: hammasi dashboardda."
     if url.startswith("https://"):
         await m.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="📈 Dashboardni ochish", url=url)]]))
@@ -522,24 +549,8 @@ async def cmd_errors(m: Message):
 async def cmd_retry(m: Message):
     if not allowed(m.from_user.id):
         return
-    rows = db().by_status("error")
-    posts = [r for r in rows if (r["reason"] or "").startswith("write:")]
-    for r in rows:
-        if r not in posts:
-            db().update(r["id"], status="triaged" if not r["data_json"] else "extracted", reason=None)
-    if len(rows) > len(posts):
-        await m.answer(f"{len(rows) - len(posts)} ta element qayta navbatga qo'yildi. /run bosing.")
-    for r in posts:   # taken finds whose post failed to write: write them now
-        db().update(r["id"], status="accepted", reason=None)
-        await asyncio.to_thread(STATE["pipeline"].write, db().get(r["id"]))
-        item = db().get(r["id"])
-        if item["status"] == "drafted":
-            await send_review(m.bot, item)
-        else:
-            db().update(r["id"], status="accepted")
-            await m.answer(f"❌ {escape(item['title'][:80])}: {escape(item['reason'] or '')[:200]}")
-    if not rows:
-        await m.answer("Xato bo'lgan element yo'q.")
+    r = await retry_errors(m.bot)
+    await m.answer(f"Qayta navbatga: {r['requeued']} · yozildi: {r['written']} · yana xato: {r['failed']}")
 
 
 # ---------------------------------------------------------------- buttons
@@ -668,16 +679,13 @@ async def main() -> None:
             scheduler.add_job(run_cycle, "interval", minutes=settings.fast_every_minutes, args=[bot, True, True],
                               max_instances=1, coalesce=True)
         scheduler.start()
+        STATE["scheduler"] = scheduler
         log.info("bot started; search %s (use /find to search now)", when)
     else:
         log.warning("ADMIN_CHAT_ID not set: setup mode. Add the bot to your editors group, send /help "
                     "there, put the chat id in .env and restart.")
     await bot.set_my_commands([
-        BotCommand(command="find", description="Hozir qidirish"),
-        BotCommand(command="panel", description="Qidirish tugmasini qadash"),
-        BotCommand(command="stats", description="Statistika"),
-        BotCommand(command="dashboard", description="Agent dashboardi"),
-        BotCommand(command="health", description="Manbalar holati"),
+        BotCommand(command="dashboard", description="Dashboardni ochish"),
         BotCommand(command="help", description="Yordam"),
     ])
     from .dashboard import start as start_dashboard

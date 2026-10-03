@@ -75,6 +75,11 @@ CREATE TABLE IF NOT EXISTS competitor_posts (
     urls TEXT
 );
 
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS llm_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at TEXT NOT NULL,
@@ -203,6 +208,15 @@ class DB:
 
     def health(self) -> list[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM source_health ORDER BY source").fetchall()
+
+    def get_meta(self, key: str, default=None):
+        row = self.conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return json.loads(row[0]) if row else default
+
+    def set_meta(self, key: str, value) -> None:
+        with self.tx() as c:
+            c.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                      (key, json.dumps(value, ensure_ascii=False)))
 
     def log_usage(self, purpose: str, model: str, tin: int, tout: int, cost: float) -> None:
         with self.tx() as c:

@@ -54,10 +54,10 @@ def test_lists_only_grants_that_meet_the_main_rules(monkeypatch):
     assert "12–20 yoshlilar uchun ochiq" in out["rules"]
 
 
-def run(coro_fn):
+def run(coro_fn, bot=None):
     async def go():
         d = sample()
-        client = TestClient(TestServer(dashboard.make_app(lambda: d)))
+        client = TestClient(TestServer(dashboard.make_app(lambda: d, bot)))
         await client.start_server()
         try:
             return await coro_fn(client, d)
@@ -133,3 +133,38 @@ def test_skip_from_dashboard(monkeypatch):
         assert r.status == 200 and d.get(rid)["status"] == "skipped" and d.get(rid)["reason"] == "Pullik"
         assert "Grant queue (Pullik)" in d.feedback_examples()["skipped"]   # the agent learns from it
     run(check)
+
+
+def test_search_button_and_system_panel(monkeypatch):
+    """The dashboard can start a search; the short report still goes to Telegram."""
+    monkeypatch.setattr(settings, "bot_token", "123:abc")
+    monkeypatch.setattr(settings, "admin_chat_id", -100)
+    monkeypatch.setattr(settings, "mode", "finder")
+    from edugrants_agent import bot as botmod
+
+    class Pipe:
+        aggregators = set()
+        def run(self, fast_only=False):
+            import time
+            time.sleep(0.2)
+            return {"added": 7}
+
+    sent = []
+
+    class B:
+        async def send_message(self, chat_id, text, reply_markup=None, reply_to_message_id=None):
+            sent.append(text)
+
+    async def check(client, d):
+        botmod.STATE.update(db=d, pipeline=Pipe(), lock=asyncio.Lock())
+        k = {"X-Key": dashboard.dashboard_key()}
+        r = await client.post("/api/search", headers=k)
+        assert r.status == 200
+        sysinfo = await (await client.get("/api/system", headers=k)).json()
+        assert sysinfo["searching"] is True
+        assert (await client.post("/api/search", headers=k)).status == 409      # one at a time
+        await asyncio.sleep(0.5)
+        sysinfo = await (await client.get("/api/system", headers=k)).json()
+        assert sysinfo["searching"] is False and sysinfo["last_search"]["seen"] == 7
+        assert sent and sent[0].startswith("🔎 Dashboarddan qidiruv: 7 ta yangi e'lon")
+    run(check, bot=B())

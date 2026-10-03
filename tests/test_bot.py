@@ -157,7 +157,7 @@ def test_bot_main_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(Dispatcher, "start_polling", fake_polling)
     monkeypatch.setattr(botmod, "Pipeline", lambda db: FakePipeline())
     asyncio.run(botmod.main())
-    assert started == {"commands": ["find", "panel", "stats", "dashboard", "health", "help"],
+    assert started == {"commands": ["dashboard", "help"],
                        "parse_mode": "HTML", "no_preview": True}
 
 
