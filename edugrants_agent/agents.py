@@ -29,6 +29,8 @@ AGENTS = {
 # Coming later: "Jarchi Jo'ra" 📣 (publisher: schedules and posts to the channel)
 
 BOTS: dict = {}       # agent -> aiogram Bot (filled by setup_bots; agents without a token are missing)
+PROBLEMS: dict = {}   # agent -> why its bot doesn't work (bad token), shown on the dashboard
+USERNAMES: dict = {}  # agent -> its bot's @username
 _DB = {"get": None}   # function returning the DB (set by the bot at startup)
 
 
@@ -42,6 +44,8 @@ def token_for(agent: str) -> str | None:
 def setup_bots(make_bot) -> list:
     """Creates one Bot per distinct token. Returns the bots to poll (the Manager first)."""
     BOTS.clear()
+    PROBLEMS.clear()
+    USERNAMES.clear()
     by_token = {}
     for agent in AGENTS:
         tok = token_for(agent)
@@ -50,9 +54,38 @@ def setup_bots(make_bot) -> list:
                       "must not reach the manager). GrantBek is off until it gets its own token.")
             continue
         if tok:
-            by_token.setdefault(tok, make_bot(tok))
+            if tok not in by_token:
+                try:
+                    by_token[tok] = make_bot(tok)
+                except Exception as e:      # e.g. a token pasted with extra text: not even shaped like a token
+                    PROBLEMS[agent] = f"{AGENTS[agent]['env']} tokenga o'xshamaydi ({type(e).__name__}). " \
+                                      "BotFather'dan faqat '123456789:AA...' qismini nusxa oling."
+                    log.error("%s: %s", agent, PROBLEMS[agent])
+                    continue
             BOTS[agent] = by_token[tok]
     return list(dict.fromkeys(BOTS.values()))
+
+
+async def check_bots() -> None:
+    """Asks Telegram about every token once at startup. A token Telegram rejects is reported (logs,
+    dashboard, and the group) instead of crashing the whole team; that agent falls back to Toshmat aka."""
+    seen = {}
+    for agent, bot in list(BOTS.items()):
+        if id(bot) not in seen:
+            try:
+                me = await bot.get_me()
+                seen[id(bot)] = ("ok", me.username)
+            except Exception as e:
+                seen[id(bot)] = ("bad", f"{type(e).__name__}: {e}"[:200])
+        status, info = seen[id(bot)]
+        if status == "ok":
+            USERNAMES[agent] = info
+            continue
+        PROBLEMS[agent] = (f"Telegram {AGENTS[agent]['env']} ni qabul qilmadi: token noto'g'ri, eskirgan yoki "
+                           f"BotFather'da bekor qilingan. ({info})")
+        log.error("%s: %s", agent, PROBLEMS[agent])
+        if agent != "manager":
+            BOTS.pop(agent, None)
 
 
 def bot_for(agent: str, fallback=None):

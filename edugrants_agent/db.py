@@ -140,7 +140,9 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 
 
 MIGRATIONS = [("items", "history_id", "INTEGER"), ("items", "fit_score", "INTEGER"), ("items", "fit_reason", "TEXT"),
-              ("history", "excluded", "TEXT"), ("history", "score", "REAL"), ("channel_posts", "text", "TEXT")]
+              ("history", "excluded", "TEXT"), ("history", "score", "REAL"), ("channel_posts", "text", "TEXT"),
+              ("community_qa", "escalated", "INTEGER DEFAULT 0"), ("community_qa", "handled", "INTEGER DEFAULT 0"),
+              ("community_qa", "link", "TEXT"), ("community_qa", "correction", "TEXT"), ("community_qa", "who", "TEXT")]
 
 
 def now_iso() -> str:
@@ -311,10 +313,24 @@ class DB:
         return self.conn.execute("SELECT * FROM channel_posts WHERE deadline >= ? ORDER BY deadline LIMIT ?",
                                  (today, limit)).fetchall()
 
-    def add_qa(self, place: str, question: str, answer: str | None, topic: str | None) -> None:
+    def add_qa(self, place: str, question: str, answer: str | None, topic: str | None, escalated: bool = False,
+               link: str | None = None, who: str | None = None) -> int:
         with self.tx() as c:
-            c.execute("INSERT INTO community_qa(at, place, question, answer, topic) VALUES (?,?,?,?,?)",
-                      (now_iso(), place, question[:1000], (answer or "")[:1500], topic))
+            cur = c.execute("INSERT INTO community_qa(at, place, question, answer, topic, escalated, handled, link, who)"
+                            " VALUES (?,?,?,?,?,?,0,?,?)", (now_iso(), place, question[:1000], (answer or "")[:1500],
+                                                           topic, int(escalated), link, who))
+            return cur.lastrowid
+
+    def qa_update(self, qa_id: int, **fields) -> None:
+        cols = [k for k in fields if k in ("handled", "correction")]
+        if cols:
+            with self.tx() as c:
+                c.execute(f"UPDATE community_qa SET {', '.join(f'{k}=?' for k in cols)} WHERE id=?",
+                          (*[fields[k] for k in cols], qa_id))
+
+    def corrections(self, limit: int = 20) -> list[sqlite3.Row]:
+        return self.conn.execute("SELECT question, correction FROM community_qa WHERE correction IS NOT NULL "
+                                 "AND correction != '' ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
     def recent_qa(self, days: int = 7, limit: int = 150) -> list[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM community_qa WHERE at >= datetime('now', ?) ORDER BY id DESC LIMIT ?",

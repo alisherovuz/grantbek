@@ -41,7 +41,8 @@ def focus_text(db) -> str:
 
 
 def is_paused(db) -> bool:
-    return bool(db.get_meta("paused"))
+    from .controls import is_paused as agent_paused
+    return agent_paused(db, "finder")
 
 
 # --------------------------------------------------------------------------- Monday list (Mirzo)
@@ -56,7 +57,11 @@ def weekly_markup(task_id: int) -> InlineKeyboardMarkup:
 async def weekly_list(created_by: str = "manager") -> str:
     """Mirzo prepares the Monday post and sends it to the group with publish buttons."""
     from .weekly import build_weekly
+    from .controls import is_paused as agent_paused
     db = _db()
+    if created_by == "manager" and agent_paused(db, "writer"):
+        note("writer", "info", "Haftalik ro'yxat o'tkazib yuborildi: Mirzo to'xtatilgan")
+        return "paused"
     task_id = db.add_task("weekly_list", "writer", created_by=created_by, status="working")
     await say("manager", f"{W}, bu haftaning muddatlar ro'yxatini tayyorla.", kind="task", task_id=task_id)
     text, rows = build_weekly(db, settings.channel_handle)
@@ -159,9 +164,13 @@ def report_text(n: dict, tips: list[str]) -> str:
 
 async def daily_report(created_by: str = "manager") -> str:
     db = _db()
+    from .controls import is_paused as agent_paused, over_budget
+    if created_by == "manager" and agent_paused(db, "manager"):
+        note("manager", "info", "Hisobot o'tkazib yuborildi: Toshmat aka to'xtatilgan")
+        return ""
     task_id = db.add_task("daily_report", "manager", created_by=created_by, status="working")
     n = await asyncio.to_thread(day_numbers, db)
-    tips = await asyncio.to_thread(suggestions, n)
+    tips = [] if over_budget(db, "manager") else await asyncio.to_thread(suggestions, n)
     text = report_text(n, tips)
     db.update_task(task_id, "done", n)
     from .bot import panel_markup
@@ -235,9 +244,11 @@ async def handle_order(text: str, bot) -> None:
     elif action == "clear_focus":
         db.set_meta("focus", {})
     elif action == "pause_daily_search":
-        db.set_meta("paused", True)
+        from .controls import set_paused
+        set_paused(db, "finder", True)
     elif action == "resume_daily_search":
-        db.set_meta("paused", False)
+        from .controls import set_paused
+        set_paused(db, "finder", False)
     elif action == "status":
         await say("manager", status_text(db))
     db.update_task(task_id, "done", {"action": action})

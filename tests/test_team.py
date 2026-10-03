@@ -196,7 +196,7 @@ def test_pause_stops_the_daily_search_but_not_manual_ones(team):
         asyncio.run(botmod.scheduled_search(toshmat))
     finally:
         botmod.run_cycle = botmod_run
-    assert ran == [] and d.events()[0]["text"].startswith("Kunlik qidiruv to'xtatilgan")
+    assert ran == [] and "Eshmat to'xtatilgan" in d.events()[0]["text"]
 
 
 # --------------------------------------------------------------------------- who speaks through which bot

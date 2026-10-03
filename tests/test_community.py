@@ -36,7 +36,7 @@ class LLM:
 
 class User:
     def __init__(self, uid=55, is_bot=False):
-        self.id, self.is_bot, self.full_name = uid, is_bot, "Ali Valiyev"
+        self.id, self.is_bot, self.full_name, self.username = uid, is_bot, "Ali Valiyev", "ali_v"
 
 
 class Chat:

@@ -431,6 +431,8 @@ def make_app(db_getter, bot=None) -> web.Application:
     app.router.add_post("/api/retry", api_retry)
     app.router.add_post("/api/reset", api_reset)
     app.router.add_get("/health", health)
+    from .panel import add_routes
+    add_routes(app)   # Home, Boshqaruv, Postlar, Muloqot
     return app
 
 

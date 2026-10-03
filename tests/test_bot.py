@@ -162,6 +162,10 @@ def test_bot_main_starts(monkeypatch, tmp_path):
 
     monkeypatch.setattr(Bot, "set_my_commands", fake_commands)
 
+    async def fake_me(self, **k):
+        return type("Me", (), {"username": "toshmat_bot"})()
+    monkeypatch.setattr(Bot, "get_me", fake_me)
+
     async def fake_send(self, chat_id, text, **k):
         started.setdefault("said", []).append(text)
     monkeypatch.setattr(Bot, "send_message", fake_send)
@@ -372,3 +376,52 @@ def test_strong_finds_are_written_without_anyone_pressing_a_button(monkeypatch):
     assert len([i for i in ids if d.get(i)["status"] == "in_review"]) == 2          # only AUTO_WRITE_PER_DAY
     asyncio.run(botmod.run_cycle(b, notify=True))                                  # a second search the same day
     assert len([i for i in ids if d.get(i)["status"] == "in_review"]) == 2          # the daily limit holds
+
+
+def test_a_rejected_token_does_not_crash_the_team(monkeypatch, tmp_path):
+    """Telegram says 'Unauthorized': no restart loop. A worker's bad token falls back to Toshmat aka;
+    a bad BOT_TOKEN keeps the dashboard up and waits for the fix."""
+    from aiogram import Bot
+    from edugrants_agent import agents
+    import edugrants_agent.dashboard as dash
+    monkeypatch.setattr(settings, "bot_token", "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi")
+    monkeypatch.setattr(settings, "admin_chat_id", -100)
+    monkeypatch.setattr(settings, "db_path", tmp_path / "b.db")
+    monkeypatch.setattr(settings, "history_file", tmp_path / "none.html")
+    monkeypatch.setenv("FINDER_BOT_TOKEN", "654321:ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsr")
+    monkeypatch.setattr(botmod, "Pipeline", lambda db: FakePipeline())
+    started = []
+
+    async def fake_dashboard(db_getter, bot=None):
+        started.append(bot)
+    monkeypatch.setattr(dash, "start", fake_dashboard)
+
+    async def rejected(self, **k):
+        raise RuntimeError("Telegram server says - Unauthorized")
+    monkeypatch.setattr(Bot, "get_me", rejected)
+
+    async def run_briefly():
+        task = asyncio.create_task(botmod.main())
+        await asyncio.sleep(0.5)
+        assert not task.done()                       # still alive, not crashed
+        task.cancel()
+    asyncio.run(run_briefly())
+    assert started and "Unauthorized" in agents.PROBLEMS["manager"]
+    assert "finder" not in agents.BOTS               # the worker falls back to Toshmat aka's bot
+    agents.BOTS.clear()
+    agents.PROBLEMS.clear()
+
+
+def test_a_token_pasted_with_extra_text_is_reported(monkeypatch):
+    from edugrants_agent import agents
+    monkeypatch.setattr(settings, "bot_token", "1:AAA")
+    monkeypatch.setenv("WRITER_BOT_TOKEN", "WRITER_BOT_TOKEN=7712345678:AAH")
+
+    def make(tok):
+        if "=" in tok:
+            raise ValueError("Token is invalid!")
+        return object()
+    agents.setup_bots(make)
+    assert "writer" not in agents.BOTS and "tokenga o'xshamaydi" in agents.PROBLEMS["writer"]
+    agents.BOTS.clear()
+    agents.PROBLEMS.clear()

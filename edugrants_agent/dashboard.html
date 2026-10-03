@@ -33,10 +33,12 @@
   .rule { font-size: 12.5px; padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
   .rule.off { background: var(--warn-soft); color: var(--warn); }
   .chip.school { background: var(--accent-soft); color: var(--accent); }
-  .nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 18px 0 16px; }
+  .nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 18px 0 16px; overflow-x: auto; scrollbar-width: none; }
+  .nav::-webkit-scrollbar { display: none; }
   .nav button { font: inherit; font-size: 14.5px; background: none; border: 0; color: var(--muted); padding: 8px 12px;
                 cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
-  @media (max-width: 560px) { .nav { flex-wrap: wrap; } .nav #days { order: -1; width: 100%; margin-bottom: 8px; } .nav > span { display: none; } }
+  @media (max-width: 560px) { .nav > span, .nav #days { display: none; } }
+  .daysm { display: none; } @media (max-width: 560px) { .daysm { display: block; width: 100%; margin-bottom: 12px; } }
   .nav button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
   .nav .dot { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff;
               font-size: 11.5px; line-height: 18px; text-align: center; margin-left: 4px; }
@@ -50,6 +52,37 @@
   .row:first-of-type { border-top: 0; }
   .ok { color: var(--accent); } .bad { color: var(--bad); }
   .pane[hidden] { display: none; }
+  .agents { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
+  @media (max-width: 720px) { .agents { grid-template-columns: 1fr; } }
+  .agent { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .agent .hd { display: flex; align-items: center; gap: 10px; }
+  .agent .av { font-size: 22px; width: 38px; height: 38px; border-radius: 50%; background: var(--chip); display: grid; place-items: center; flex: none; }
+  .agent .nm { font-weight: 600; } .agent .rl { color: var(--muted); font-size: 12.5px; }
+  .agent .st { margin-left: auto; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .st-idle { background: var(--chip); color: var(--muted); } .st-working { background: var(--info-soft); color: var(--info); }
+  .st-error { background: var(--bad-soft); color: var(--bad); } .st-paused, .st-budget { background: var(--warn-soft); color: var(--warn); }
+  .st-off { background: var(--chip); color: var(--muted); }
+  .agent ul { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; } .agent li { margin: 2px 0; }
+  .agent .ft { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 18px; }
+  @media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  .kpis div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .kpis b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; } .kpis span { color: var(--muted); font-size: 12px; }
+  h3.sec { font-size: 15px; margin: 22px 0 10px; display: flex; align-items: center; gap: 8px; }
+  h3.sec .n { background: var(--bad); color: #fff; border-radius: 9px; font-size: 12px; padding: 0 7px; line-height: 18px; }
+  .post { white-space: pre-wrap; font-size: 13.5px; background: var(--chip); border-radius: 8px; padding: 10px 12px; margin-top: 8px; max-height: 240px; overflow: auto; }
+  textarea { width: 100%; min-height: 220px; font: 13.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink);
+             background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 8px; }
+  textarea.short { min-height: 70px; font-family: inherit; }
+  .empty-sm { color: var(--muted); font-size: 13.5px; padding: 6px 0; }
+  .qa .q { font-weight: 500; } .qa .a { margin-top: 4px; font-size: 13.5px; } .qa .fix { margin-top: 4px; font-size: 13.5px; color: var(--accent); }
+  .form { display: grid; grid-template-columns: 1fr 160px; gap: 8px 14px; align-items: center; }
+  @media (max-width: 560px) { .form { grid-template-columns: 1fr; } }
+  .form.wide { grid-template-columns: 1fr; }
+  .form label { font-size: 13.5px; } .form small { display: block; color: var(--muted); font-size: 12px; }
+  .form input[type=number], .form input[type=time], .form input[type=text] { font: inherit; color: var(--ink); background: var(--panel);
+             border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; width: 100%; }
+  .pill { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--chip); margin: 2px 4px 2px 0; }
   .funnel { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 18px 0 8px; }
   .step { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
   .step b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
@@ -113,7 +146,7 @@
   details { margin-top: 6px; font-size: 13.5px; }
   summary { cursor: pointer; color: var(--muted); }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
-  .btn { font: inherit; font-size: 13.5px; border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  .btn { font: inherit; font-size: 13.5px; border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap;
          border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .btn:disabled { opacity: .5; cursor: default; }
@@ -139,8 +172,12 @@
   </header>
 
   <nav class="nav" role="tablist">
-    <button role="tab" data-pane="grants" aria-selected="true">Grantlar</button>
+    <button role="tab" data-pane="home" aria-selected="true">Bosh sahifa <span id="inboxDot"></span></button>
+    <button role="tab" data-pane="grants" aria-selected="false">Grantlar</button>
+    <button role="tab" data-pane="posts" aria-selected="false">Postlar</button>
+    <button role="tab" data-pane="talk" aria-selected="false">Muloqot</button>
     <button role="tab" data-pane="money" aria-selected="false">Xarajat</button>
+    <button role="tab" data-pane="settings" aria-selected="false">Boshqaruv</button>
     <button role="tab" data-pane="system" aria-selected="false">Tizim <span id="errDot"></span></button>
     <span style="flex:1"></span>
     <select id="days" aria-label="Davr" style="margin-bottom:6px">
@@ -152,7 +189,39 @@
     </select>
   </nav>
 
-  <section class="pane" id="pane-grants">
+  <section class="pane" id="pane-home">
+    <div class="agents" id="agents"></div>
+    <h3 class="sec">Sizdan kutilmoqda <span id="inboxCount"></span></h3>
+    <div id="inbox"></div>
+    <h3 class="sec">Shu hafta</h3>
+    <div class="kpis" id="kpis"></div>
+    <h3 class="sec">Bugun nima bo'ldi</h3>
+    <div class="box" id="timeline"></div>
+  </section>
+
+  <section class="pane" id="pane-posts" hidden>
+    <h3 class="sec">Chop etishga tayyor</h3><div id="drafts"></div>
+    <h3 class="sec">Chop etilganlar</h3><div class="box" id="published"></div>
+    <h3 class="sec">Haftalik ro'yxatlar</h3><div class="box" id="lists"></div>
+  </section>
+
+  <section class="pane" id="pane-talk" hidden>
+    <div class="box" id="talkHead"></div>
+    <h3 class="sec">Sizga yuborilgan murojaatlar <span id="peopleCount"></span></h3><div id="people"></div>
+    <h3 class="sec">Barcha savol-javoblar</h3><div id="qa"></div>
+  </section>
+
+  <section class="pane" id="pane-settings" hidden>
+    <p class="note">Bu yerdagi sozlamalar Railway Variables'dan ustun turadi va darhol ishlaydi.</p>
+    <div class="box" id="focusBox"></div>
+    <div id="settingsForm"></div>
+  </section>
+
+  <section class="pane" id="pane-grants" hidden>
+  <select class="daysm" id="daysM" aria-label="Davr">
+    <option value="3">Oxirgi 3 kun</option><option value="7">Oxirgi 7 kun</option><option value="14" selected>Oxirgi 14 kun</option>
+    <option value="30">Oxirgi 30 kun</option><option value="90">Oxirgi 90 kun</option>
+  </select>
 
   <div class="funnel" id="funnel"></div>
   <p class="note">«Vibe filtri»: AI sarlavha va qisqa matnni o'qib, kanalga mos emas deb tashlaganlar. Ular uchun O'zbekiston va muddat tekshirilmagan, shuning uchun pastdagi ro'yxatda yo'q.</p>
@@ -406,6 +475,186 @@ $("resetBtn").addEventListener("click", async () => {
   toast(out.message || out.error || "Xato");
   load(); loadSystem();
 });
+
+// =========================================================================== team panel
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? { headers: { "X-Key": KEY } }
+    : { method: "POST", headers: { "X-Key": KEY, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(out.error || "Xato");
+  return out;
+}
+async function doit(path, body, after) {
+  try { const out = await api(path, body); toast(out.message || "Bajarildi"); }
+  catch (e) { toast(e.message); }
+  if (after) after();
+}
+const STATE_UZ = { idle: "💤 kutmoqda", working: "⚙️ ishlayapti", error: "⚠️ xato", paused: "⏸ to'xtatilgan",
+                   budget: "💸 byudjet tugadi", off: "boti ulanmagan" };
+const BOT_UZ = { own: "o'z boti ulangan", shared: "Toshmat akaning boti orqali gapiradi", none: "boti hali yo'q" };
+
+function postCard(p, kind, after) {
+  const body = el("div", { class: "post", text: (kind === "weekly" ? (p.text || "").replace(/<[^>]+>/g, "") : p.preview) || "(matn yo'q)" });
+  const actions = el("div", { class: "actions" });
+  const wrap = el("div", { class: "card" },
+    el("div", { class: "top" }, el("span", { class: "title", text: kind === "weekly" ? `🗓 Haftalik ro'yxat (${p.items} ta dastur)` : p.title }),
+      el("span", { class: "badge b-queue", text: kind === "weekly" ? "Mirzo" : (p.auto ? "Toshmat aka berdi" : "Mirzo yozdi") })),
+    body, actions);
+  const send = (action, extra = {}) => doit("/api/post", { kind, action, id: p.id, ...extra }, after);
+  actions.append(
+    el("button", { class: "btn primary", text: "✅ Chop etish", onclick: (e) => { e.target.disabled = true; send("publish"); } }),
+    el("button", { class: "btn", text: "✏️ Tahrirlash", onclick: () => {
+      const ta = el("textarea"); ta.value = p.text;
+      body.replaceWith(ta);
+      actions.replaceChildren(
+        el("button", { class: "btn primary", text: "✅ Saqlab chop etish", onclick: () => send("publish", { text: ta.value }) }),
+        el("button", { class: "btn", text: "💾 Saqlash", onclick: () => send("save", { text: ta.value }) }));
+    } }),
+    el("button", { class: "btn", text: kind === "weekly" ? "❌ Bekor" : "❌ Rad etish",
+                   onclick: () => send(kind === "weekly" ? "cancel" : "reject") }));
+  return wrap;
+}
+
+function personCard(x, after) {
+  return el("div", { class: "card qa" },
+    el("div", { class: "top" }, el("span", { class: "q", text: `${x.who} · ${x.place === "dm" ? "shaxsiy xabar" : "izoh"}` }),
+      el("span", { class: "muted", text: x.at })),
+    el("div", { class: "line", text: x.question }),
+    el("div", { class: "a muted", text: "GrantBek: " + (x.answer || "") }),
+    el("div", { class: "actions" },
+      x.link ? el("a", { class: "btn", href: safeUrl(x.link), target: "_blank", rel: "noopener", text: "💬 Ochish" }) : null,
+      el("button", { class: "btn primary", text: "✓ Hal qilindi", onclick: () => doit("/api/community", { action: "handled", id: x.id }, after) })));
+}
+
+async function loadHome() {
+  let d; try { d = await api("/api/home"); } catch (e) { return; }
+  $("agents").replaceChildren(...d.agents.map(a => el("div", { class: "agent" },
+    el("div", { class: "hd" }, el("div", { class: "av", text: a.emoji }),
+      el("div", {}, el("div", { class: "nm", text: a.name }), el("div", { class: "rl", text: a.role })),
+      el("span", { class: "st st-" + a.state, text: STATE_UZ[a.state] || a.state })),
+    el("ul", {}, ...a.today.map(t => el("li", { text: t }))),
+    a.problem ? el("div", { class: "line bad", text: "⚠️ " + a.problem }) : null,
+    a.last ? el("div", { class: "line muted", text: `Oxirgi: ${a.last.text} · ${a.last.at}` }) : null,
+    el("div", { class: "ft" },
+      el("span", { text: (a.username ? "@" + a.username + " · " : "") + `${BOT_UZ[a.bot]} · bugun $${a.spent.toFixed(2)}` + (a.budget ? ` / $${a.budget.toFixed(2)}` : "") }),
+      a.key === "community" && a.bot === "none" ? null :
+      el("button", { class: "btn", text: a.paused ? "▶️ Ishga tushirish" : "⏸ To'xtatish",
+                     onclick: () => doit("/api/agent", { agent: a.key, paused: !a.paused }, loadHome) })))));
+
+  const ib = d.inbox, parts = [];
+  ib.posts.forEach(p => parts.push(postCard(p, "post", loadHome)));
+  ib.weekly.forEach(w => parts.push(postCard(w, "weekly", loadHome)));
+  ib.people.forEach(x => parts.push(personCard(x, loadHome)));
+  const go = (pane) => document.querySelector(`.nav [data-pane=${pane}]`).click();
+  if (ib.queue) parts.push(el("div", { class: "card" }, el("span", { text: `🔎 Navbatda ${ib.queue} ta topilma ko'rib chiqishni kutmoqda ` }),
+    el("button", { class: "btn", text: "Grantlarga o'tish", onclick: () => go("grants") })));
+  if (ib.errors) parts.push(el("div", { class: "card" }, el("span", { class: "bad", text: `⚠️ ${ib.errors} ta xato ` }),
+    el("button", { class: "btn", text: "Tizimga o'tish", onclick: () => go("system") })));
+  const n = ib.posts.length + ib.weekly.length + ib.people.length;
+  $("inboxCount").replaceChildren(...(n ? [el("span", { class: "n", text: String(n) })] : []));
+  $("inboxDot").replaceChildren(...(n ? [el("span", { class: "dot", text: String(n) })] : []));
+  $("inbox").replaceChildren(...(parts.length ? parts : [el("div", { class: "empty-sm", text: "Hozircha sizdan hech narsa kutilmayapti 🎉" })]));
+
+  const w = d.week;
+  $("kpis").replaceChildren(...[[w.posts, "post chop etildi"], [w.found, "grant tekshirildi"], [w.answered, "savolga javob"],
+    ["$" + w.cost.toFixed(2), "AI xarajati"], [w.per_post == null ? "—" : "$" + w.per_post.toFixed(2), "1 post narxi"]]
+    .map(([v, l]) => el("div", {}, el("b", { text: String(v) }), el("span", { text: l }))));
+  const KIND = { error: "bad", done: "ok", task: "muted", info: "muted" };
+  $("timeline").replaceChildren(...(d.timeline.length ? d.timeline.slice(0, 15).map(e => el("div", { class: "row" },
+      el("span", {}, el("strong", { text: e.who + " " }), el("span", { class: KIND[e.kind] || "", text: e.text })),
+      el("span", { class: "muted", style: "white-space:nowrap", text: e.at })))
+    : [el("div", { class: "muted", text: "Hali hech narsa bo'lmagan." })]));
+}
+
+async function loadPosts() {
+  let d; try { d = await api("/api/posts"); } catch (e) { return; }
+  $("drafts").replaceChildren(...(d.drafts.length ? d.drafts.map(p => postCard(p, "post", loadPosts))
+    : [el("div", { class: "empty-sm", text: "Tayyor post yo'q." })]));
+  $("published").replaceChildren(...(d.published.length ? d.published.map(p => el("div", { class: "row" },
+      el("a", { href: safeUrl(p.url), target: "_blank", rel: "noopener", text: p.title }), el("span", { class: "muted", text: p.at })))
+    : [el("div", { class: "muted", text: "Hali yo'q." })]));
+  const ST = { waiting: "kutmoqda", done: "chop etildi", cancelled: "bekor qilindi", working: "tayyorlanmoqda" };
+  $("lists").replaceChildren(...(d.lists.length ? d.lists.map(l => el("div", { class: "row" },
+      l.url ? el("a", { href: safeUrl(l.url), target: "_blank", rel: "noopener", text: `${l.at} · ${l.items} ta dastur` })
+            : el("span", { text: `${l.at} · ${l.items} ta dastur` }),
+      el("span", { class: "muted", text: ST[l.status] || l.status })))
+    : [el("div", { class: "muted", text: "Hali yo'q. Har dushanba Mirzo tayyorlaydi." })]));
+}
+
+async function loadTalk() {
+  let d; try { d = await api("/api/community"); } catch (e) { return; }
+  $("talkHead").replaceChildren(
+    el("h2", {}, el("span", { text: "💬 GrantBek" }),
+      el("button", { class: "btn", text: "🔄 Bilimini hozir yangilash", onclick: () => doit("/api/community", { action: "refresh" }) })),
+    el("div", { class: d.connected ? "ok" : "bad", text: d.connected ? `Boti ulangan · ${d.open_posts} ta dastur hali ochiq (u biladi)`
+                                                              : "Boti hali ulanmagan: Railway'da COMMUNITY_BOT_TOKEN qo'shing" }),
+    d.topics.length ? el("div", { class: "line" }, el("span", { class: "muted", text: "Shu hafta so'ralgan: " }),
+      ...d.topics.map(([t, n]) => el("span", { class: "pill", text: `${t} · ${n}` }))) : null,
+    d.brief ? el("details", {}, el("summary", { text: `GrantBekning FAQ eslatmalari (${d.brief_at || ""})` }),
+      el("div", { class: "post", text: d.brief })) : null);
+  const open = d.qa.filter(x => x.escalated && !x.handled);
+  $("peopleCount").replaceChildren(...(open.length ? [el("span", { class: "n", text: String(open.length) })] : []));
+  $("people").replaceChildren(...(open.length ? open.map(x => personCard(x, loadTalk)) : [el("div", { class: "empty-sm", text: "Hech kim kutmayapti." })]));
+  $("qa").replaceChildren(...(d.qa.length ? d.qa.map(x => {
+    const fix = el("div", { class: "actions" });
+    const card = el("div", { class: "card qa" },
+      el("div", { class: "top" }, el("span", { class: "muted", text: `${x.who || "?"} · ${x.place === "dm" ? "shaxsiy xabar" : "izoh"} · ${x.topic}` }),
+        el("span", { class: "muted", text: x.at })),
+      el("div", { class: "q", text: x.question }),
+      el("div", { class: "a", text: "GrantBek: " + (x.answer || "") }),
+      x.correction ? el("div", { class: "fix", text: "✓ Sizning tuzatishingiz: " + x.correction }) : null, fix);
+    fix.append(el("button", { class: "btn", text: x.correction ? "✏️ Tuzatishni o'zgartirish" : "❌ Noto'g'ri javob", onclick: () => {
+      const ta = el("textarea", { class: "short", placeholder: "To'g'ri javob qanday bo'lishi kerak edi?" }); ta.value = x.correction || "";
+      fix.replaceChildren(ta, el("button", { class: "btn primary", text: "💾 Saqlash (GrantBek o'rganadi)",
+        onclick: () => doit("/api/community", { action: "correct", id: x.id, text: ta.value }, loadTalk) }));
+    } }));
+    return card;
+  }) : [el("div", { class: "empty-sm", text: "Hali savol bo'lmagan." })]));
+}
+
+async function loadSettings() {
+  let d; try { d = await api("/api/settings"); } catch (e) { return; }
+  const f = d.focus || {};
+  const ft = el("input", { type: "text", placeholder: "masalan: maktab o'quvchilari uchun olimpiadalar" }); ft.value = f.text || "";
+  const fd = el("input", { type: "number", min: "1", max: "60" }); fd.value = 7;
+  $("focusBox").replaceChildren(el("h2", {}, el("span", { text: "🎯 Eshmatga fokus" })),
+    el("p", { class: "muted", style: "margin:0 0 8px;font-size:13.5px", text: f.text ? `Hozir: «${f.text}» (${f.until} gacha)` : "Hozir fokus yo'q." }),
+    el("div", { class: "form wide" }, el("label", { text: "Nimani ko'proq qidirsin" }), ft, el("label", { text: "Necha kun" }), fd),
+    el("div", { class: "actions" }, el("button", { class: "btn primary", text: "💾 Saqlash", onclick: () => doit("/api/focus", { text: ft.value, days: fd.value }, loadSettings) }),
+      f.text ? el("button", { class: "btn", text: "Olib tashlash", onclick: () => doit("/api/focus", { text: "" }, loadSettings) }) : null));
+  const inputs = {};
+  const groups = Object.entries(d.agents).map(([agent, a]) => {
+    const rows = [];
+    for (const [k, meta] of Object.entries(d.fields)) {
+      if (meta.group !== agent) continue;
+      let inp;
+      if (meta.type === "bool") { inp = el("input", { type: "checkbox" }); inp.checked = !!d.values[k]; }
+      else if (meta.type === "time") { inp = el("input", { type: "time" }); inp.value = d.values[k] || ""; }
+      else if (meta.type === "text") { inp = el("input", { type: "text" }); inp.value = d.values[k] || ""; }
+      else { inp = el("input", { type: "number", step: meta.type === "money" ? "0.1" : "1", min: "0" }); inp.value = d.values[k] ?? ""; }
+      inputs[k] = [meta.type, inp];
+      rows.push(el("label", {}, meta.label, el("small", { text: meta.help })), inp);
+    }
+    return rows.length ? el("div", { class: "box" }, el("h2", {}, el("span", { text: `${a.emoji} ${a.name}` })), el("div", { class: "form" }, ...rows)) : null;
+  });
+  const save = el("button", { class: "btn primary", text: "💾 Hammasini saqlash", onclick: () => {
+    const body = {};
+    for (const [k, [type, inp]] of Object.entries(inputs)) body[k] = type === "bool" ? inp.checked : inp.value;
+    doit("/api/settings", body, () => { loadSettings(); load(); loadSystem(); });
+  } });
+  $("settingsForm").replaceChildren(...groups, el("div", { class: "actions" }, save));
+}
+
+const LOADERS = { home: loadHome, posts: loadPosts, talk: loadTalk, settings: loadSettings };
+document.querySelectorAll(".nav [role=tab]").forEach(b => b.addEventListener("click", () => {
+  if (LOADERS[b.dataset.pane]) LOADERS[b.dataset.pane]();
+  try { history.replaceState(null, "", location.pathname + location.search + "#" + b.dataset.pane); } catch (e) {}
+}));
+$("daysM").addEventListener("change", () => { $("days").value = $("daysM").value; load(); });
+const startPane = (location.hash || "").slice(1);
+if (startPane && document.querySelector(`.nav [data-pane=${startPane}]`)) document.querySelector(`.nav [data-pane=${startPane}]`).click();
+else loadHome();
+setInterval(() => { if (!document.hidden && !$("pane-home").hidden) loadHome(); }, 60000);
 
 $("days").addEventListener("change", load);
 loadSystem();

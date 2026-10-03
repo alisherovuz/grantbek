@@ -247,6 +247,9 @@ async def run_cycle(bot: Bot, notify: bool = False, fast_only: bool = False, man
     if STATE["lock"].locked():
         return "⏳ Qidiruv allaqachon ketmoqda, tugashini kuting."
     finder = AGENTS["finder"]["name"]
+    from .controls import over_budget
+    if over_budget(db(), "finder"):
+        return f"💸 {finder} bugungi AI byudjetini tugatdi. Boshqaruv bo'limida oshirish mumkin."
     async with STATE["lock"]:
         db().set_meta("search_started", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
         task_id = db().add_task("search", "finder", {"manual": manual}, status="working",
@@ -309,6 +312,9 @@ async def auto_write(bot: Bot, task_id: int | None = None) -> int:
     At most AUTO_WRITE_PER_DAY a day; you still tap "Chop etish" (or "Rad etish")."""
     if not settings.auto_write_per_day or not settings.write_on_accept or settings.mode != "finder":
         return 0
+    from .controls import may_work
+    if may_work(db(), "writer"):
+        return 0
     from .dashboard import _tz_offset
     tz = _tz_offset()
     done_today = db().conn.execute(
@@ -335,8 +341,10 @@ def failing_sources() -> dict:
 
 async def scheduled_search(bot: Bot, fast_only: bool = False) -> None:
     """The daily search, unless Toshmat aka was told to pause it."""
-    if db().get_meta("paused"):
-        log_event("manager", "info", "Kunlik qidiruv to'xtatilgan, o'tkazib yuborildi")
+    from .controls import may_work
+    why = may_work(db(), "finder")
+    if why:
+        log_event("manager", "info", f"Kunlik qidiruv o'tkazib yuborildi: Eshmat {why}")
         return
     await run_cycle(bot, True, fast_only)
 
@@ -651,30 +659,65 @@ async def cmd_retry(m: Message):
 async def on_approve(cb: CallbackQuery, bot: Bot):
     if not allowed(cb.from_user.id):
         return await cb.answer("Ruxsat yo'q", show_alert=True)
-    item_id = int(cb.data.split(":")[1])
+    try:
+        post_url, note = await publish_item(int(cb.data.split(":")[1]), bot, by=cb.from_user.first_name)
+    except PublishError as e:
+        return await cb.answer(str(e)[:190], show_alert=True)
+    await cb.answer("Chop etildi" + note)
+
+
+class PublishError(Exception):
+    pass
+
+
+async def publish_item(item_id: int, bot: Bot | None = None, by: str = "") -> tuple[str, str]:
+    """Posts a ready post to the channel (through Toshmat aka's bot, the channel admin), sends it to the
+    platform, marks it everywhere. Used by the Telegram button and the dashboard. Returns (url, note)."""
     item = db().get(item_id)
     if not item or item["status"] != "in_review":
-        return await cb.answer(f"Holati: {item['status'] if item else 'topilmadi'}", show_alert=True)
+        raise PublishError(f"Holati: {item['status'] if item else 'topilmadi'}")
     db().update(item_id, status="publishing")
     try:
         msg = await bot_for("manager", bot).send_message(settings.channel_id, item["post_text"])
     except Exception as e:
         db().update(item_id, status="in_review")
-        return await cb.answer(f"Kanalga yuborib bo'lmadi: {e}"[:190], show_alert=True)
+        raise PublishError(f"Kanalga yuborib bo'lmadi: {e}") from None
     post_url = f"https://t.me/{settings.channel_handle.lstrip('@')}/{msg.message_id}"
     ref, note = None, ""
     try:
-        ref = await asyncio.to_thread(push_to_platform, item_id, json.loads(item["platform_json"]), post_url)
+        ref = await asyncio.to_thread(push_to_platform, item_id, json.loads(item["platform_json"] or "{}"), post_url)
     except Exception as e:
-        note = " (platformaga yuborilmadi, /errors)"
+        note = " (platformaga yuborilmadi)"
         log.error("platform push failed for #%d: %s", item_id, e)
     db().update(item_id, status="published", channel_message_id=msg.message_id, platform_ref=ref,
                 reason=None if ref else "platform push failed")
     log_event("writer", "done", f"Kanalda chop etildi: {item['title'][:80]}")
     learn_post(msg.message_id, item["post_text"])
-    await cb.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"✅ Chop etildi — {cb.from_user.first_name}", url=post_url)]]))
-    await cb.answer("Chop etildi" + note)
+    if item["review_message_id"] and settings.admin_chat_id:   # the Telegram card shows it too
+        try:
+            await bot_for("writer", bot).edit_message_reply_markup(
+                chat_id=settings.admin_chat_id, message_id=item["review_message_id"],
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+                    text=f"✅ Chop etildi" + (f" — {by}" if by else ""), url=post_url)]]))
+        except Exception:
+            pass
+    return post_url, note
+
+
+async def publish_weekly(task_id: int, bot: Bot | None = None, text: str | None = None) -> str:
+    t = db().task(task_id)
+    if not t or t["status"] != "waiting":
+        raise PublishError("Bu ro'yxat allaqachon hal qilingan")
+    result = json.loads(t["result"] or "{}")
+    text = text or result.get("text", "")
+    try:
+        msg = await bot_for("manager", bot).send_message(settings.channel_id, text)
+    except Exception as e:
+        raise PublishError(f"Kanalga yuborib bo'lmadi: {e}") from None
+    url = f"https://t.me/{settings.channel_handle.lstrip('@')}/{msg.message_id}"
+    db().update_task(task_id, "done", {**result, "text": text, "url": url})
+    log_event("writer", "done", "Haftalik ro'yxat kanalda chop etildi", task_id)
+    return url
 
 
 @router.callback_query(F.data.startswith("rj:"))
@@ -734,13 +777,9 @@ async def on_weekly(cb: CallbackQuery, bot: Bot):
     text = json.loads(t["result"] or "{}").get("text", "")
     if action == "pub":
         try:
-            msg = await bot_for("manager", bot).send_message(settings.channel_id, text)
-        except Exception as e:
-            return await cb.answer(f"Kanalga yuborib bo'lmadi: {e}"[:190], show_alert=True)
-        url = f"https://t.me/{settings.channel_handle.lstrip('@')}/{msg.message_id}"
-        db().update_task(int(task_id), "done", {**json.loads(t["result"] or "{}"), "url": url})
-        learn_post(msg.message_id, text)
-        log_event("writer", "done", "Haftalik ro'yxat kanalda chop etildi", int(task_id))
+            url = await publish_weekly(int(task_id), bot)
+        except PublishError as e:
+            return await cb.answer(str(e)[:190], show_alert=True)
         await cb.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✅ Chop etildi", url=url)]]))
         await cb.answer("Chop etildi")
@@ -827,6 +866,41 @@ def auto_import_history(database: DB) -> None:
     settings.profile_file.write_text(build_profile(database), encoding="utf-8")
 
 
+def plan_jobs() -> str:
+    """(Re)creates every scheduled job from the current settings. Called at startup and whenever the
+    times are changed on the dashboard."""
+    from .community import refresh_base
+    from .manager import daily_report, weekly_list
+    scheduler, bot = STATE["scheduler"], STATE["bot"]
+    scheduler.remove_all_jobs()
+    if settings.run_at:
+        hour, minute = (int(x) for x in settings.run_at.split(":"))
+        scheduler.add_job(scheduled_search, "cron", hour=hour, minute=minute, args=[bot], id="search",
+                          max_instances=1, coalesce=True, misfire_grace_time=3600)
+        when = f"daily at {settings.run_at} {settings.timezone}"
+    else:
+        scheduler.add_job(scheduled_search, "interval", hours=settings.run_every_hours, args=[bot], id="search",
+                          next_run_time=datetime.now() + timedelta(minutes=1), max_instances=1, coalesce=True)
+        when = f"every {settings.run_every_hours}h"
+    if settings.fast_every_minutes > 0:  # optional extra Telegram-only checks
+        scheduler.add_job(scheduled_search, "interval", minutes=settings.fast_every_minutes, args=[bot, True],
+                          id="fast", max_instances=1, coalesce=True)
+    if settings.community_refresh_at:   # GrantBek re-reads the channel and relearns the week's questions
+        h, mi = (int(x) for x in settings.community_refresh_at.split(":"))
+        scheduler.add_job(refresh_base, "cron", hour=h, minute=mi, id="refresh", max_instances=1, coalesce=True,
+                          misfire_grace_time=3600)
+    if settings.report_at:      # Toshmat aka's evening report
+        h, mi = (int(x) for x in settings.report_at.split(":"))
+        scheduler.add_job(daily_report, "cron", hour=h, minute=mi, id="report", max_instances=1, coalesce=True,
+                          misfire_grace_time=3600)
+    if settings.weekly_at:      # Mirzo's Monday deadline list, e.g. "mon 08:30"
+        day, hm = settings.weekly_at.split()
+        h, mi = (int(x) for x in hm.split(":"))
+        scheduler.add_job(weekly_list, "cron", day_of_week=day, hour=h, minute=mi, id="weekly", max_instances=1,
+                          coalesce=True, misfire_grace_time=6 * 3600)
+    return when
+
+
 async def main() -> None:
     if not settings.bot_token:
         raise SystemExit("BOT_TOKEN is missing (Railway: Variables; on your computer: .env)")
@@ -837,46 +911,31 @@ async def main() -> None:
         log.warning("NO RAILWAY VOLUME: the database is on the container's own disk and will be wiped at the next "
                     "deploy. Add a volume (Cmd+K > Volume, mount path /app/data) to keep statistics and finds.")
     auto_import_history(STATE["db"])
+    from .controls import apply as apply_controls
+    apply_controls(STATE["db"])              # settings changed on the dashboard win over the variables
     STATE["pipeline"] = Pipeline(STATE["db"])
     props = DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)
-    bots = setup_bots(lambda token: Bot(token, default=props))
-    bot = BOTS["manager"]
+    setup_bots(lambda token: Bot(token, default=props))
+    from .agents import PROBLEMS, check_bots
+    await check_bots()
+    bot = BOTS.get("manager")
+    from .dashboard import start as start_dashboard
+    await start_dashboard(lambda: STATE["db"], bot)   # the dashboard runs even if Telegram refuses a token
+    if bot is None or "manager" in PROBLEMS:
+        log.error("BOT_TOKEN is not working: %s. Fix it in Railway > Variables; the dashboard stays up meanwhile.",
+                  PROBLEMS.get("manager", "missing"))
+        await asyncio.Event().wait()                  # no crash-restart loop; Railway redeploys when you fix it
+    bots = list(dict.fromkeys(BOTS.values()))
     dp = Dispatcher()
     dp.include_router(router)
     from .community import router as community_router
-    dp.include_router(community_router)      # GrantBek: DMs to her bot and comments under our posts
+    dp.include_router(community_router)      # GrantBek: DMs to his bot and comments under our posts
 
     if settings.admin_chat_id:
-        from .manager import daily_report, weekly_list
-        scheduler = AsyncIOScheduler(timezone=settings.timezone)
-        if settings.run_at:
-            hour, minute = (int(x) for x in settings.run_at.split(":"))
-            scheduler.add_job(scheduled_search, "cron", hour=hour, minute=minute, args=[bot],
-                              max_instances=1, coalesce=True, misfire_grace_time=3600)
-            when = f"daily at {settings.run_at} {settings.timezone}"
-        else:
-            scheduler.add_job(scheduled_search, "interval", hours=settings.run_every_hours, args=[bot],
-                              next_run_time=datetime.now() + timedelta(minutes=1), max_instances=1, coalesce=True)
-            when = f"every {settings.run_every_hours}h"
-        if settings.fast_every_minutes > 0:  # optional extra Telegram-only checks
-            scheduler.add_job(scheduled_search, "interval", minutes=settings.fast_every_minutes, args=[bot, True],
-                              max_instances=1, coalesce=True)
-        if settings.report_at:      # Toshmat aka's evening report
-            h, mi = (int(x) for x in settings.report_at.split(":"))
-            scheduler.add_job(daily_report, "cron", hour=h, minute=mi, max_instances=1, coalesce=True,
-                              misfire_grace_time=3600)
-        if settings.community_refresh_at:   # GrantBek re-reads the channel and relearns the week's questions
-            from .community import refresh_base
-            h, mi = (int(x) for x in settings.community_refresh_at.split(":"))
-            scheduler.add_job(refresh_base, "cron", hour=h, minute=mi, max_instances=1, coalesce=True,
-                              misfire_grace_time=3600)
-        if settings.weekly_at:      # Mirzo's Monday deadline list, e.g. "mon 08:30"
-            day, hm = settings.weekly_at.split()
-            h, mi = (int(x) for x in hm.split(":"))
-            scheduler.add_job(weekly_list, "cron", day_of_week=day, hour=h, minute=mi, max_instances=1, coalesce=True,
-                              misfire_grace_time=6 * 3600)
-        scheduler.start()
-        STATE["scheduler"] = scheduler
+        STATE["scheduler"] = AsyncIOScheduler(timezone=settings.timezone)
+        STATE["bot"] = bot
+        when = plan_jobs()
+        STATE["scheduler"].start()
         log.info("team started (%s); search %s", ", ".join(a for a in AGENTS if a in BOTS), when)
     else:
         log.warning("ADMIN_CHAT_ID not set: setup mode. Add the bot to your agents group, send /help "
@@ -888,11 +947,11 @@ async def main() -> None:
         BotCommand(command="weekly", description="Haftalik muddatlar ro'yxati"),
         BotCommand(command="help", description="Yordam"),
     ])
-    from .dashboard import start as start_dashboard
-    await start_dashboard(lambda: STATE["db"], bot)
     if settings.admin_chat_id:
         own = [f"{AGENTS[a]['emoji']} {AGENTS[a]['name']}" + (
             "" if a in BOTS else " (o'z boti hali yo'q, ishlamaydi)" if a == "community" else " (Toshmat akaning boti orqali)")
             for a in AGENTS]
-        await say("manager", "Jamoa ishga tushdi: " + ", ".join(own), kind="info")
+        text = "Jamoa ishga tushdi: " + ", ".join(own)
+        bad = [f"⚠️ {AGENTS[a]['name']}: {p}" for a, p in PROBLEMS.items()]
+        await say("manager", text + ("\n" + "\n".join(bad) if bad else ""), kind="error" if bad else "info")
     await dp.start_polling(*bots)

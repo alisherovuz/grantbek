@@ -112,6 +112,10 @@ def decide(context: str, message: str, where: str) -> dict:
     from .bot import STATE
     llm = STATE["pipeline"].llm
     brief = (_db().get_meta("community_brief") or {}).get("text", "")
+    fixes = _db().corrections(15)
+    if fixes:
+        brief += "\nTHE OWNER CORRECTED THESE ANSWERS (answer like this):\n" + "\n".join(
+            f"- Q: {f['question'][:200]} -> correct answer: {f['correction'][:300]}" for f in fixes)
     return llm._call("community", settings.community_model or settings.model_fast,
                      RULES + (f"\n\nWHAT PEOPLE ASKED RECENTLY AND HOW WE ANSWER (updated daily; follow this tone, "
                               f"but facts still come only from the posts):\n{brief}" if brief else "")
@@ -121,6 +125,11 @@ def decide(context: str, message: str, where: str) -> dict:
 async def answer(m: Message, context: str, where: str) -> None:
     text = (m.text or m.caption or "").strip()
     if not text:
+        return
+    from .controls import may_work
+    why = may_work(_db(), "community")
+    if why:
+        note("community", "info", f"Javob berilmadi ({why}): {text[:80]}")
         return
     try:
         d = await asyncio.to_thread(decide, context, text, where)
@@ -134,9 +143,18 @@ async def answer(m: Message, context: str, where: str) -> None:
         return
     await m.reply(escape(d["reply"], quote=False))
     note("community", "done", f"Javob berdi ({where}, {d.get('topic', '')}): {who}")
-    _db().add_qa("dm" if m.chat.type == "private" else "comment", text, d["reply"], d.get("topic"))
+    url = None
+    if m.chat.type != "private":
+        try:
+            url = m.get_url()
+        except Exception:
+            url = None
+    elif m.from_user and m.from_user.username:
+        url = f"https://t.me/{m.from_user.username}"
+    _db().add_qa("dm" if m.chat.type == "private" else "comment", text, d["reply"], d.get("topic"),
+                 escalated=d.get("action") == "escalate", link=url, who=who)
     if d.get("action") == "escalate":
-        link = f" · <a href=\"{m.get_url()}\">izoh</a>" if m.chat.type != "private" and m.get_url() else ""
+        link = f" · <a href=\"{url}\">izoh</a>" if m.chat.type != "private" and url else ""
         await say("community", f"🙋 {escape(who, quote=False)} ({where}) adminga murojaat qildi: "
                                f"<i>{escape(text[:300], quote=False)}</i>{link}", kind="task")
 
@@ -218,6 +236,9 @@ def refresh_channel(db) -> int:
 async def refresh_base() -> None:
     """Every morning: new channel posts in, closed deadlines out (by date), and a fresh FAQ from the week."""
     db = _db()
+    from .controls import is_paused
+    if is_paused(db, "community"):
+        return
     task_id = db.add_task("community_refresh", "community", status="working")
     new = 0
     if settings.tg_api_id and settings.tg_api_hash and settings.tg_string_session:

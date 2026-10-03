@@ -87,6 +87,11 @@ class Settings:
     # Strong finds go straight to Mirzo: the post is written before you look, you only tap "Chop etish"
     auto_write_min_fit: int = field(default_factory=lambda: _int("AUTO_WRITE_MIN_FIT", 5))
     auto_write_per_day: int = field(default_factory=lambda: _int("AUTO_WRITE_PER_DAY", 3))   # 0 = off
+    # Daily AI budget per agent in USD (0 = no limit); usually set on the dashboard
+    budget_finder: float = field(default_factory=lambda: _float("BUDGET_FINDER", 0))
+    budget_writer: float = field(default_factory=lambda: _float("BUDGET_WRITER", 0))
+    budget_community: float = field(default_factory=lambda: _float("BUDGET_COMMUNITY", 0))
+    budget_manager: float = field(default_factory=lambda: _float("BUDGET_MANAGER", 0))
     report_at: str | None = field(default_factory=lambda: _env("REPORT_AT", "21:00"))      # Toshmat aka's daily report
     weekly_at: str | None = field(default_factory=lambda: _env("WEEKLY_AT", "mon 08:30"))  # Mirzo's Monday list
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Asia/Tashkent"))
