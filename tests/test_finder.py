@@ -46,7 +46,7 @@ def test_participant_pays_nothing(change, ok):
 @pytest.mark.parametrize("change,fragment", [
     ({"application_fee": "paid"}, "application fee"),
     ({"age_min": 45, "age_max": 60}, "ages"),
-    ({"age_min": 8, "age_max": 11}, "ages"),
+    ({"age_min": 5, "age_max": 9}, "ages"),
     ({"uzbekistan_eligible": "unclear"}, "Uzbekistan"),
     ({"program_fee": "paid"}, "participant pays"),
 ])
@@ -359,14 +359,42 @@ def test_post_links_to_the_organiser_not_the_aggregator():
     assert post_link({**d, "registration_url": "https://forms.gle/abc"}, "https://camp.example/") == "https://forms.gle/abc"
 
 
-@pytest.mark.parametrize("ages,ok", [((14, 18), True), ((18, 35), True), ((None, None), True),
-                                     ((21, 35), False), ((25, None), False), ((8, 11), False)])
-def test_audience_is_12_to_20_by_default(monkeypatch, ages, ok):
+@pytest.mark.parametrize("ages,level,ok", [
+    ((14, 18), [], True), ((18, 35), [], True), ((16, 25), [], True), ((None, None), [], True),
+    ((21, 30), [], False),                        # starts after 20: not our audience
+    ((25, 35), [], False), ((5, 9), [], False),
+    ((25, 35), ["bachelor"], True),               # school or bachelor students: fine whatever the ages
+    ((None, None), ["master", "phd"], False),     # master's/PhD only
+])
+def test_audience_must_accept_20_or_younger_or_be_school_or_bachelor(monkeypatch, ages, level, ok):
     from edugrants_agent.config import Settings
-    monkeypatch.delenv("CHECK_AGES", raising=False)
-    monkeypatch.delenv("AGE_MAX", raising=False)
+    for k in ("CHECK_AGES", "AGE_MIN", "AGE_MAX", "MIN_DAYS_LEFT"):
+        monkeypatch.delenv(k, raising=False)
     fresh = Settings()
-    assert fresh.check_ages and (fresh.age_min, fresh.age_max) == (12, 20)
+    assert fresh.check_ages and (fresh.age_min, fresh.age_max, fresh.min_days_left) == (10, 20, 4)
+    monkeypatch.setattr(settings, "age_min", 10)
     monkeypatch.setattr(settings, "age_max", 20)
-    data = {**BASE, "age_min": ages[0], "age_max": ages[1]}
+    data = {**BASE, "age_min": ages[0], "age_max": ages[1], "level": level}
     assert (Pipeline.reject_reason(data) is None) is ok
+
+
+GOOD = {**POST_READY, "level": ["high_school"]}
+
+
+@pytest.mark.parametrize("change,fit,history,why", [
+    ({}, 4, None, None),                                                  # a good find
+    ({}, 3, None, "fit 3"),                                               # only average for the channel
+    ({}, 3, 7, None),                                                     # ...unless the channel posted it before
+    ({"deadline": (date.today() + timedelta(days=10)).isoformat()}, 5, None, "deadline too close"),
+    ({"age_min": 25, "age_max": 35, "level": []}, 5, None, "ages"),
+    ({"age_min": 25, "age_max": 35}, 5, None, None),                     # but school pupils: fine
+    ({"level": ["master", "phd"], "age_min": None, "age_max": None}, 5, None, "ages"),
+    ({"level": [], "age_min": None, "age_max": None}, 5, None, "no age or level"),
+])
+def test_only_good_finds_reach_editors(monkeypatch, change, fit, history, why):
+    from edugrants_agent.pipeline import final_check
+    monkeypatch.setattr(settings, "min_days_left", 14)
+    monkeypatch.setattr(settings, "min_show_fit", 4)
+    monkeypatch.setattr(settings, "age_max", 20)
+    reason = final_check({**GOOD, **change}, "https://camp.example/", fit, history)
+    assert (reason is None) if why is None else (why in reason)

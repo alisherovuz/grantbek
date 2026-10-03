@@ -21,7 +21,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .config import database_is_temporary, settings
 from .dashboard import MANUAL_REASON, dashboard_url
 from .db import DB
-from .pipeline import AGGREGATOR_DOMAINS, Pipeline, format_gaps, level_reason, open_to_school_pupils
+from .pipeline import AGGREGATOR_DOMAINS, Pipeline, final_check, open_to_school_pupils
 from .publish import push_to_platform
 from .render import finder_card, uz_date
 
@@ -96,13 +96,14 @@ SKIP_REASONS = {"fee": "💸 Pullik", "fit": "🎯 Bizga mos emas", "dup": "🔁
                 "late": "⏳ Kech / eski", "age": "👤 Yosh mos emas", "bad": "🚩 Ishonchsiz"}
 
 
-def _expired(r) -> bool:
-    """A find waiting in the queue whose deadline got too close since it was found."""
+def _expired(r, passed_only: bool = False) -> bool:
+    """A find waiting in the queue whose deadline got too close since it was found
+    (or, with passed_only, whose deadline has already passed)."""
     data = json.loads(r["data_json"] or "{}")
     if data.get("deadline_type") == "rolling" or not data.get("deadline"):
         return False
     try:
-        return (date.fromisoformat(data["deadline"][:10]) - date.today()).days < settings.min_days_left
+        return (date.fromisoformat(data["deadline"][:10]) - date.today()).days < (0 if passed_only else settings.min_days_left)
     except ValueError:
         return False
 
@@ -112,18 +113,14 @@ def ordered_finds(limit: int | None = None) -> list[tuple]:
     external finds before old programmes, then best fit, then the freshest at the source."""
     cards = []
     for r in db().by_status("extracted"):
-        if _expired(r):
+        manual = r["reason"] == MANUAL_REASON   # an editor put it back from the dashboard: no automatic checks
+        if _expired(r, passed_only=manual):
             db().update(r["id"], status="rejected", reason="deadline too close (waited in the queue)")
             continue
-        manual = r["reason"] == MANUAL_REASON   # an editor put it back from the dashboard: no automatic checks
-        gaps = [] if manual else format_gaps(json.loads(r["data_json"] or "{}"), r["official_url"],
-                                             getattr(STATE["pipeline"], "aggregators", AGGREGATOR_DOMAINS))
-        if gaps:   # finds queued before the format check existed
-            db().update(r["id"], status="rejected", reason=f"post format: {', '.join(gaps)}")
-            continue
-        lvl = None if manual else level_reason(json.loads(r["data_json"] or "{}"), r["fit_score"])
-        if lvl:    # queued before the master's rule existed
-            db().update(r["id"], status="rejected", reason=lvl)
+        reason = None if manual else final_check(json.loads(r["data_json"] or "{}"), r["official_url"], r["fit_score"],
+                                                 r["history_id"], getattr(STATE["pipeline"], "aggregators", AGGREGATOR_DOMAINS))
+        if reason:   # rules got stricter since it was found
+            db().update(r["id"], status="rejected", reason=reason)
             continue
         text, taken = finder_card(db(), r)
         school = 0 if open_to_school_pupils(json.loads(r["data_json"] or "{}")) else 1   # most subscribers are 12-20

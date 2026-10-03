@@ -7,7 +7,7 @@ from edugrants_agent.db import DB
 
 # The fields every post needs (see pipeline.format_gaps)
 POSTABLE = {"host_country": "Online", "summary": "An online programme for students from all countries.",
-            "benefits": ["Certificate"], "format": "online"}
+            "benefits": ["Certificate"], "format": "online", "level": ["high_school"]}
 
 
 class FakeMsg:
@@ -215,7 +215,7 @@ def add_finds(d, n, dl_days=60):
     for i in range(n):
         iid = d.insert_item(source="s", url=f"https://x{i}.example/", canonical_url=f"https://x{i}.example/",
                             title=f"Find {i}", norm_title=f"find {i}", summary="", published_at=None)
-        d.update(iid, status="extracted", fit_score=5 if i == n - 1 else 3, official_url=f"https://x{i}.example/",
+        d.update(iid, status="extracted", fit_score=5 if i == n - 1 else 4, official_url=f"https://x{i}.example/",
                  data_json={**POSTABLE, "title": f"Find {i}", "deadline_type": "fixed", "deadline": dl})
         ids.append(iid)
     return ids
@@ -322,10 +322,10 @@ def test_failed_write_offers_a_rewrite_button(monkeypatch):
     assert note.deleted and any(x.text.endswith("<b>Camp</b>") for x in b.msgs)
 
 
-def test_masters_only_waits_for_a_famous_name(monkeypatch):
+def test_masters_only_is_dropped_unless_the_channel_posted_it_before(monkeypatch):
     from edugrants_agent.pipeline import level_reason
-    assert level_reason({"level": ["master"]}, 3).startswith("level: only master")
-    assert level_reason({"level": ["master", "phd"]}, 5) is None        # Chevening-class names pass
-    assert level_reason({"level": ["bachelor", "master"]}, 2) is None   # bachelors too: normal rules
+    assert level_reason({"level": ["master"]}, 5).startswith("level: only master")      # even a high AI score
+    assert level_reason({"level": ["master", "phd"]}, 3, history_id=12) is None          # posted in earlier years
+    assert level_reason({"level": ["bachelor", "master"]}, 2) is None                    # bachelors too: normal rules
     monkeypatch.setattr(settings, "grad_only_min_fit", 0)
     assert level_reason({"level": ["phd"]}, 1) is None

@@ -34,7 +34,7 @@ def sample():
     item(d, "expired", "rejected", {"deadline": PAST}, reason="deadline too close (-3 days left)")
     item(d, "vibe", "rejected", None, reason="triage: small essay contest")
     item(d, "dup", "duplicate", None)
-    item(d, "adults", "rejected", {"age_min": 25, "age_max": 35}, reason="ages 25-35 outside 12-20")
+    item(d, "adults", "rejected", {"age_min": 25, "age_max": 35, "level": []}, reason="ages 25-35 outside 10-20")
     item(d, "famous-masters", "accepted", {"level": ["master"]}, fit=5)
     return d
 
@@ -51,7 +51,7 @@ def test_lists_only_grants_that_meet_the_main_rules(monkeypatch):
     f = out["funnel"]
     assert (f["found"], f["duplicate"], f["vibe_cut"], f["checked"], f["two_rules"], f["shown_to_editors"]) == (11, 1, 1, 9, 5, 4)
     assert dict(out["reasons"]) == {"Post formatiga mos emas": 1}
-    assert "12–20 yoshlilar uchun ochiq" in out["rules"]
+    assert any(r.startswith("20 yoshgacha") for r in out["rules"])
 
 
 def run(coro_fn, bot=None):

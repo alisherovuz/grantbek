@@ -87,9 +87,11 @@ class Settings:
     max_drafts_per_run: int = field(default_factory=lambda: _int("MAX_DRAFTS_PER_RUN", 25))
     # Programmes only for master's/PhD students: the channel posted 16 of 850, so they need this fit
     # score (5 = famous names like Chevening or Erasmus Mundus). 0 = no limit.
-    grad_only_min_fit: int = field(default_factory=lambda: _int("GRAD_ONLY_MIN_FIT", 5))
+    grad_only_min_fit: int = field(default_factory=lambda: _int("GRAD_ONLY_MIN_FIT", 6))   # 6 = never (only past posts)
+    # Only finds the AI scored at least this high (1-5) reach the editors; the rest wait under "Agent tashladi"
+    min_show_fit: int = field(default_factory=lambda: _int("MIN_SHOW_FIT", 4))
     max_process_per_run: int = field(default_factory=lambda: _int("MAX_PROCESS_PER_RUN", 60))
-    min_days_left: int = field(default_factory=lambda: _int("MIN_DAYS_LEFT", 7))
+    min_days_left: int = field(default_factory=lambda: _int("MIN_DAYS_LEFT", 4))
     # Title matching window. Keep it well under a year so next year's round of the same
     # programme isn't mistaken for a repost (the official-page check handles that case).
     dedupe_days: int = field(default_factory=lambda: _int("DEDUPE_DAYS", 120))
@@ -97,15 +99,16 @@ class Settings:
 
     # Finder rules (what counts as "our vibe")
     mode: str = field(default_factory=lambda: _env("MODE", "finder"))  # finder | full
-    age_min: int = field(default_factory=lambda: _int("AGE_MIN", 12))
+    age_min: int = field(default_factory=lambda: _int("AGE_MIN", 10))
+    # A programme must accept someone aged AGE_MIN..AGE_MAX: 21-30 is out, 18-35 is in (633 of 642 past posts)
     age_max: int = field(default_factory=lambda: _int("AGE_MAX", 20))
     # Hard rules. Only "Uzbeks can apply" and "no application fee" are always on; the rest are optional.
     require_uz_yes: bool = field(default_factory=lambda: _env("REQUIRE_UZ_YES", "false").lower() == "true")
     require_free_participation: bool = field(default_factory=lambda: _env("REQUIRE_FREE_PARTICIPATION", "false").lower() == "true")
-    # ~80% of subscribers are 12-20; 98% of the channel's past programmes were open to that age range
+    # ~80% of subscribers are 12-20: programmes must accept someone aged 10-20, or be for school/bachelor students
     check_ages: bool = field(default_factory=lambda: _env("CHECK_AGES", "true").lower() == "true")
     allow_full_aid: bool = field(default_factory=lambda: _env("ALLOW_FULL_AID", "false").lower() == "true")
-    min_fit_score: int = field(default_factory=lambda: _int("MIN_FIT_SCORE", 2))
+    min_fit_score: int = field(default_factory=lambda: _int("MIN_FIT_SCORE", 3))
     recent_post_days: int = field(default_factory=lambda: _int("RECENT_POST_DAYS", 60))
     write_on_accept: bool = field(default_factory=lambda: _env("WRITE_ON_ACCEPT", "true").lower() == "true")
     history_file: Path = field(default_factory=lambda: Path(_env("HISTORY_FILE", str(ROOT / "config" / "messages.html"))))

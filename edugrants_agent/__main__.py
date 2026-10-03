@@ -55,9 +55,13 @@ def main() -> None:
     if args.cmd == "railway-env":   # secrets go to your terminal only; paste them into Railway yourself
         from dotenv import dotenv_values
         from .config import ROOT
-        skip = {"DB_PATH", "HISTORY_FILE"}   # the container uses its own paths (/app/data on the volume)
+        # Only keys and ids: the rules come from the code's defaults, so later updates can change them
+        # (a copied rule here would silently override every future improvement).
+        keep = {"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "BOT_TOKEN", "ADMIN_CHAT_ID", "ADMIN_USER_IDS",
+                "CHANNEL_ID", "CHANNEL_HANDLE", "TG_API_ID", "TG_API_HASH", "TG_STRING_SESSION",
+                "PLATFORM_WEBHOOK_URL", "PLATFORM_TOKEN", "IMAP_USER", "IMAP_PASSWORD", "IMAP_HOST"}
         for k, v in dotenv_values(ROOT / ".env").items():
-            if k not in skip and v not in (None, ""):
+            if k in keep and v not in (None, ""):
                 print(f"{k}={v}")
         return
 

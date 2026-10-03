@@ -35,14 +35,14 @@ def hard_rules_text() -> str:
     if settings.require_free_participation:
         rules.append("the participant pays nothing to take part (fully funded, or free)")
     if settings.check_ages:
-        rules.append(f"open to people aged {settings.age_min}-{settings.age_max} (the age range must overlap it)")
+        rules.append(f"for school pupils or bachelor students, or open to people aged {settings.age_min}-{settings.age_max}")
     lines = ["HARD RULES (drop only if one of these is clearly broken):"] + [f"- {r}" for r in rules]
     lines.append("Also drop things that are not an opportunity for an individual young person: job vacancies, "
                  "grants only for organisations or companies, and programmes only for citizens of one other country.")
-    lines.append(f"AUDIENCE: about 80% of subscribers are {settings.age_min}-{settings.age_max}: school pupils and "
-                 "first-year students. 95% of the programmes the channel posted were open to under-18s. Score highest "
-                 "what a 15-year-old or a first-year bachelor student can apply to; something only for people over "
-                 f"{settings.age_max} is a 1.")
+    lines.append("AUDIENCE: about 80% of subscribers are 12-20: school pupils and first-year students. 95% of the "
+                 "programmes the channel posted were open to under-18s. Score highest what a 15-year-old or a "
+                 f"bachelor student can apply to; something only for people over {settings.age_max}, or only for "
+                 "master's/PhD students, is a 1.")
     if not settings.require_free_participation:
         lines.append("Cost of taking part, age range and study level are NOT reasons to drop. Use them only "
                      "for the fit score.")
@@ -76,9 +76,28 @@ def grad_only(data: dict) -> bool:
     return bool(levels) and levels <= GRAD_LEVELS
 
 
-def level_reason(data: dict, fit: int | None) -> str | None:
-    if grad_only(data) and (fit or 0) < settings.grad_only_min_fit:
+def level_reason(data: dict, fit: int | None, history_id: int | None = None) -> str | None:
+    """Master's/PhD/professionals only: not our audience, unless the channel posted it in earlier years."""
+    if grad_only(data) and not history_id and (fit or 0) < settings.grad_only_min_fit:
         return f"level: only {'/'.join(sorted(set(data.get('level') or [])))} (fit {fit or 0})"
+    return None
+
+
+def final_check(data: dict, official_url: str | None, fit: int | None, history_id: int | None = None,
+                aggregators: set[str] = AGGREGATOR_DOMAINS) -> str | None:
+    """Every rule a find must pass before editors see it, in one place. Used when a find is researched
+    and again for finds already waiting, so a stricter rule cleans the queue right away."""
+    reason = Pipeline.reject_reason(data)
+    if reason:
+        return reason
+    gaps = format_gaps(data, official_url, aggregators)
+    if gaps:
+        return f"post format: {', '.join(gaps)}"
+    reason = level_reason(data, fit, history_id)
+    if reason:
+        return reason
+    if not history_id and (fit or 0) < settings.min_show_fit:
+        return f"fit {fit or 0} below {settings.min_show_fit}"
     return None
 
 
@@ -86,7 +105,10 @@ YOUNG_LEVELS = {"high_school", "bachelor", "any"}
 
 
 def fits_audience_age(data: dict) -> bool:
-    """Open to someone aged AGE_MIN..AGE_MAX: by the stated ages, or, if none, by study level."""
+    """Our audience: accepts someone aged AGE_MIN..AGE_MAX (10-20; so 18-35 is in, 21-30 is out), OR for school pupils or bachelor
+    students whatever ages it states. With neither ages nor level, it isn't ruled out here."""
+    if {"high_school", "bachelor"} & set(data.get("level") or []):
+        return True
     lo, hi = data.get("age_min"), data.get("age_max")
     if lo is not None or hi is not None:
         return not ((lo is not None and lo > settings.age_max) or (hi is not None and hi < settings.age_min))
@@ -117,6 +139,8 @@ def format_gaps(data: dict, official_url: str | None, aggregators: set[str] = AG
         gaps.append("no official link")
     if data.get("deadline_type") != "rolling" and not data.get("deadline"):
         gaps.append("no deadline")
+    if data.get("age_min") is None and data.get("age_max") is None and not data.get("level"):
+        gaps.append("no age or level")   # the post's "Yosh toifasi" line, and our 12-20 check, need one
     return gaps
 
 
@@ -265,12 +289,7 @@ class Pipeline:
         official_canon = canonical_url(official_url) if official_url else None
         fields = {"data_json": data, "official_url": official_url, "official_canonical": official_canon}
 
-        reason = self.reject_reason(data)
-        if not reason:
-            gaps = format_gaps(data, official_url, self.aggregators)
-            reason = f"post format: {', '.join(gaps)}" if gaps else None
-        if not reason:
-            reason = level_reason(data, item["fit_score"])
+        reason = final_check(data, official_url, item["fit_score"], item["history_id"], self.aggregators)
         if reason:
             self.db.update(item_id, status="rejected", reason=reason, **fields)
             # A rule that won't change next year (tuition, fee, ages, eligibility): stop watching it
@@ -332,8 +351,7 @@ class Pipeline:
             if data.get("application_fee") == "paid":
                 return "application fee"
             lo, hi = data.get("age_min"), data.get("age_max")
-            if settings.check_ages and ((lo is not None and lo > settings.age_max)
-                                        or (hi is not None and hi < settings.age_min)):
+            if settings.check_ages and not fits_audience_age(data):
                 return f"ages {lo}-{hi} outside {settings.age_min}-{settings.age_max}"
             if settings.require_free_participation and not participant_pays_nothing(data):
                 return (f"participant pays (funding={data.get('funding')}, "

@@ -42,7 +42,7 @@ LEVEL_UZ = {"high_school": "maktab", "bachelor": "bakalavr", "master": "magistra
 FORMAT_UZ = {"online": "Onlayn", "offline": "Oflayn", "hybrid": "Gibrid"}
 GAP_UZ = {"no title": "nomi yo'q", "no country": "davlat noma'lum", "online/offline unknown": "onlayn/oflayn noma'lum",
           "no description": "tavsif yo'q", "no benefits": "imtiyozlar yo'q", "no official link": "rasmiy havola yo'q",
-          "no deadline": "muddat yo'q"}
+          "no deadline": "muddat yo'q", "no age or level": "yosh toifasi noma'lum"}
 
 
 def dashboard_key() -> str:
@@ -71,7 +71,10 @@ def reason_uz(reason: str | None) -> str:
         gaps = [GAP_UZ.get(g.strip(), g.strip()) for g in r.split(":", 1)[1].split(",")]
         return "Post formatiga mos emas: " + ", ".join(gaps)
     if low.startswith("level:"):
-        return "Faqat magistratura/PhD uchun (mashhur nom emas)"
+        return "Faqat magistratura/PhD yoki kattalar uchun"
+    if low.startswith("fit "):
+        m = re.match(r"fit (\d+)", low)
+        return f"Kanalga mosligi past (AI bahosi {m.group(1) if m else '?'}/5)"
     if low.startswith("application fee"):
         return "Ariza to'lovi bor"
     if low.startswith("deadline too close"):
@@ -140,9 +143,11 @@ def meets_main_rules(data: dict, let_through: bool = False) -> bool:
 def rules_text() -> list[str]:
     """What the agent is enforcing right now (so a wrong Railway variable is visible on the page)."""
     rules = ["O'zbekistonliklar topshira oladi", "Muddati o'tmagan"]
-    rules.append(f"{settings.age_min}–{settings.age_max} yoshlilar uchun ochiq" if settings.check_ages
+    rules.append(f"{settings.age_max} yoshgacha bo'lganlar qatnasha oladi yoki maktab/bakalavr" if settings.check_ages
                  else "⚠️ Yosh tekshirilmayapti (CHECK_AGES=false)")
     rules.append("Ariza to'lovi yo'q")
+    rules.append(f"Kamida {settings.min_days_left} kun qolgan")
+    rules.append(f"AI bahosi kamida {settings.min_show_fit}/5")
     return rules
 
 
