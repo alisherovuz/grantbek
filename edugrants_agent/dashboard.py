@@ -34,6 +34,8 @@ DB_KEY = web.AppKey("db", object)     # a function returning the DB
 BOT_KEY = web.AppKey("bot", object)
 MANUAL_REASON = "dashboarddan navbatga qaytarildi"   # bypasses the format and master's checks in the queue
 
+SKIP_REASONS_UZ = {"fit": "Bizga mos emas", "fee": "Pullik", "dup": "Allaqachon bor", "late": "Kech / eski",
+                   "age": "Yosh mos emas", "bad": "Ishonchsiz"}
 TAKEN = ("accepted", "drafted", "in_review", "published", "declined", "publishing")
 LEVEL_UZ = {"high_school": "maktab", "bachelor": "bakalavr", "master": "magistratura", "phd": "PhD",
             "young_professional": "mutaxassis", "any": "hamma"}
@@ -218,9 +220,53 @@ def build(db, days: int = 14) -> dict:
         if it["verdict"] == "rejected":
             key = reason_group(it["why"])
             reasons[key] = reasons.get(key, 0) + 1
-    return {"days": days, "funnel": funnel, "items": items, "rules": rules_text(),
+    return {"days": days, "funnel": funnel, "items": items, "rules": rules_text(), "costs": costs(db, days),
             "reasons": sorted(reasons.items(), key=lambda kv: -kv[1]),
             "today": date.today().isoformat()}
+
+
+PURPOSE_UZ = {"triage": "Saralash (vibe filtri)", "find_official": "Rasmiy sahifani topish",
+              "extract": "Rasmiy sahifani o'qish", "write": "Post yozish", "check": "Tekshiruv"}
+
+
+def _tz_offset() -> str:
+    """SQLite modifier that turns stored UTC times into local (Tashkent) time."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    minutes = int(datetime.now(ZoneInfo(settings.timezone)).utcoffset().total_seconds() // 60)
+    return f"{minutes:+d} minutes"
+
+
+def costs(db, days: int = 14) -> dict:
+    """What the agent spent on Claude: today, this month, all time, per day and per job.
+    Days are counted in local time, so 'today' starts at midnight in Tashkent."""
+    tz = _tz_offset()
+    one = lambda sql, *a: db.conn.execute(sql, (tz, *a)).fetchone()[0] or 0.0  # noqa: E731
+    today = one("SELECT SUM(cost_usd) FROM llm_usage WHERE date(at, ?) = date('now', ?)", tz)
+    month = one("SELECT SUM(cost_usd) FROM llm_usage WHERE strftime('%Y-%m', at, ?) = strftime('%Y-%m', 'now', ?)", tz)
+    week = one("SELECT SUM(cost_usd) FROM llm_usage WHERE date(at, ?) > date('now', ?, '-7 days')", tz)
+    total = db.conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM llm_usage").fetchone()[0]
+    first = db.conn.execute("SELECT MIN(at) FROM llm_usage").fetchone()[0]
+    per_day = {r[0]: r[1] for r in db.conn.execute(
+        "SELECT date(at, ?) d, SUM(cost_usd) FROM llm_usage WHERE date(at, ?) > date('now', ?, ?) GROUP BY d",
+        (tz, tz, tz, f"-{int(days)} days"))}
+    from datetime import date as _d, timedelta
+    local_today = _d.fromisoformat(db.conn.execute("SELECT date('now', ?)", (tz,)).fetchone()[0])
+    daily = [{"day": (local_today - timedelta(days=i)).isoformat(),
+              "usd": round(per_day.get((local_today - timedelta(days=i)).isoformat(), 0.0), 4)}
+             for i in range(int(days) - 1, -1, -1)]
+    jobs = [{"job": PURPOSE_UZ.get(r[0], r[0]), "usd": round(r[1], 4), "calls": r[2]} for r in db.conn.execute(
+        "SELECT purpose, SUM(cost_usd), COUNT(*) FROM llm_usage WHERE date(at, ?) > date('now', ?, ?)"
+        " GROUP BY purpose ORDER BY 2 DESC", (tz, tz, f"-{int(days)} days"))]
+    taken = db.conn.execute(
+        f"SELECT COUNT(*) FROM items WHERE status IN ({','.join('?' * len(TAKEN))})"
+        " AND discovered_at >= datetime('now', ?)", (*TAKEN, f"-{int(days)} days")).fetchone()[0]
+    spent = sum(d["usd"] for d in daily)
+    fixed = float(os.getenv("MONTHLY_FIXED_COST") or 0)   # e.g. Railway; not measured, so typed in by hand
+    return {"today": round(today, 3), "week": round(week, 3), "month": round(month, 3), "total": round(total, 3),
+            "since": local_time(first) if first else None, "daily": daily, "jobs": jobs,
+            "per_taken": round(spent / taken, 3) if taken else None, "taken": taken,
+            "fixed_month": fixed or None}
 
 
 # --------------------------------------------------------------------------- web
@@ -257,6 +303,11 @@ async def api_action(request: web.Request) -> web.Response:
     if action == "queue":
         db.update(item_id, status="extracted", reason=MANUAL_REASON)
         return web.json_response({"ok": True, "message": "Navbatga qaytarildi: guruhdagi 🗂 Topilmalar'da chiqadi"})
+    if action == "skip":
+        if item["status"] not in ("extracted", "shown"):
+            return web.json_response({"error": "faqat navbatdagilarni o'tkazib yuborish mumkin"}, status=409)
+        db.update(item_id, status="skipped", reason=SKIP_REASONS_UZ.get(body.get("reason"), "Bizga mos emas"))
+        return web.json_response({"ok": True, "message": "O'tkazib yuborildi, agent bundan o'rganadi"})
     if action == "take":
         from .bot import take, write_and_send
         take(item, 0)

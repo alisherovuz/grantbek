@@ -76,7 +76,7 @@ def test_button_runs_a_search(monkeypatch):
     assert botmod.STATE["pipeline"].runs == 1
     assert b.sent[0][1].startswith("🔎 Qidirilmoqda")
     assert b.edits[0].startswith("✅ Qidiruv tugadi: 12 ta yangi e'lon ko'rildi, mos keladigan yangisi yo'q.")
-    assert "Navbatda topilma yo'q" in b.edits[0]
+    assert "Bugungi AI xarajati: $0.00" in b.edits[0]
 
 
 def test_button_refuses_strangers(monkeypatch):
@@ -157,7 +157,7 @@ def test_bot_main_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(Dispatcher, "start_polling", fake_polling)
     monkeypatch.setattr(botmod, "Pipeline", lambda db: FakePipeline())
     asyncio.run(botmod.main())
-    assert started == {"commands": ["find", "list", "panel", "stats", "dashboard", "health", "help"],
+    assert started == {"commands": ["find", "panel", "stats", "dashboard", "health", "help"],
                        "parse_mode": "HTML", "no_preview": True}
 
 
@@ -221,16 +221,18 @@ def add_finds(d, n, dl_days=60):
     return ids
 
 
-def test_search_shows_all_finds_in_one_message(monkeypatch):
+def test_search_reports_with_a_dashboard_button(monkeypatch):
+    """Finds live on the dashboard now: the search only reports how many and links there."""
     setup(monkeypatch)
+    monkeypatch.setenv("DASHBOARD_URL", "https://grantbek.example")
     add_finds(botmod.STATE["db"], 12)
     b = FakeBot()
     asyncio.run(botmod.manual_search(b, -100, 7))
-    assert len(b.msgs) == 1                      # the status message became the browser
+    assert len(b.msgs) == 1
     m = b.msgs[0]
-    assert "12 ta mos topilma" in m.text and "Topilma 1 / 12" in m.text and "Find 11" in m.text   # best fit first
-    assert set(m.buttons()) >= {"⬅️ Oldingisi", "Keyingisi ➡️", "✅ Olamiz", "❌ Kerak emas", "1/12"}
-
+    assert "12 ta mos topilma dashboardda kutmoqda" in m.text and "Find" not in m.text
+    urls = [btn.url for row in m.markup.inline_keyboard for btn in row if btn.url]
+    assert urls and urls[0].startswith("https://grantbek.example/?key=")
 
 def test_next_and_previous_flip_through_the_queue(monkeypatch):
     setup(monkeypatch)

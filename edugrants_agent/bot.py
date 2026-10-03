@@ -232,7 +232,8 @@ async def on_browse_skip_reason(cb: CallbackQuery):
 
 async def run_cycle(bot: Bot, notify: bool = False, fast_only: bool = False, manual: bool = False,
                     status: Message | None = None) -> str:
-    """Searches, then shows the finds in one browser message (`status` is turned into it, if given)."""
+    """Searches, then reports in one short message with a button to the dashboard, where the finds are.
+    (`status`: the "Qidirilmoqda..." message to turn into the report.)"""
     if STATE["lock"].locked():
         return "⏳ Qidiruv allaqachon ketmoqda, tugashini kuting."
     async with STATE["lock"]:
@@ -241,35 +242,46 @@ async def run_cycle(bot: Bot, notify: bool = False, fast_only: bool = False, man
     seen = result["added"]
     waiting = len(ordered_finds()) if settings.mode == "finder" else sent
     head = "✅ Qidiruv tugadi" if manual else "☀️ Bugungi qidiruv"
-    note = (f"{head}: {seen} ta yangi e'lon ko'rildi, {waiting} ta mos topilma navbatda."
+    note = (f"{head}: {seen} ta yangi e'lon ko'rildi, {waiting} ta mos topilma dashboardda kutmoqda."
             if waiting else f"{head}: {seen} ta yangi e'lon ko'rildi, mos keladigan yangisi yo'q.")
+    try:
+        from .dashboard import costs
+        note += f"\n💵 Bugungi AI xarajati: ${costs(db(), 1)['today']:.2f}"
+    except Exception:
+        log.exception("cost line failed")
     if settings.mode != "finder" or not settings.admin_chat_id:
         return note
     if not manual and (not notify or (fast_only and waiting == 0)):
         return ""
     if status is not None:
-        await show_in(status, note=note)
+        await status.edit_text(note, reply_markup=panel_markup())
     else:
-        await open_browser(bot, settings.admin_chat_id, note=note)
+        await bot.send_message(settings.admin_chat_id, note, reply_markup=panel_markup())
     return note
 
 
-# ---------------------------------------------------------------- the search button
+# ---------------------------------------------------------------- the buttons under the chat
 SEARCH_TEXT = "🔎 Hozir qidirish"
 STATS_TEXT = "📊 Statistika"
+DASH_TEXT = "📈 Dashboard"
 
 
 def main_keyboard() -> ReplyKeyboardMarkup:
     """Always-visible buttons at the bottom of the chat."""
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=SEARCH_TEXT), KeyboardButton(text=BROWSE_TEXT)],
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=SEARCH_TEXT), KeyboardButton(text=DASH_TEXT)],
                                          [KeyboardButton(text=STATS_TEXT)]],
                                resize_keyboard=True, is_persistent=True)
 
 
+def dash_button() -> InlineKeyboardButton:
+    url = dashboard_url()
+    return (InlineKeyboardButton(text=DASH_TEXT, url=url) if url.startswith("https://")
+            else InlineKeyboardButton(text=DASH_TEXT, callback_data="dash"))
+
+
 def panel_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=SEARCH_TEXT, callback_data="search"),
-        InlineKeyboardButton(text=BROWSE_TEXT, callback_data="more"),
+        InlineKeyboardButton(text=SEARCH_TEXT, callback_data="search"), dash_button(),
     ], [InlineKeyboardButton(text=STATS_TEXT, callback_data="stats")]])
 
 
@@ -280,7 +292,7 @@ async def manual_search(bot: Bot, chat_id: int, user_id: int) -> None:
     if STATE["lock"].locked():
         await bot.send_message(chat_id, "⏳ Qidiruv allaqachon ketmoqda, tugashini kuting.")
         return
-    status = await bot.send_message(chat_id, "🔎 Qidirilmoqda... odatda 2-5 daqiqa. Topilganlar shu xabarda chiqadi.")
+    status = await bot.send_message(chat_id, "🔎 Qidirilmoqda... odatda 2-5 daqiqa. Natija shu xabarda chiqadi.")
     try:
         text = await run_cycle(bot, manual=True, status=status)
         if text.startswith("⏳"):
@@ -301,18 +313,16 @@ async def on_search_inline(cb: CallbackQuery, bot: Bot):
     await manual_search(bot, cb.message.chat.id, cb.from_user.id)
 
 
-@router.message(F.text.in_({BROWSE_TEXT, OLD_MORE_TEXT}))
+@router.message(F.text.in_({DASH_TEXT, BROWSE_TEXT, OLD_MORE_TEXT}))   # old buttons lead to the dashboard too
 @router.message(Command("more", "list"))
-async def on_browse_button(m: Message, bot: Bot):
-    if allowed(m.from_user.id):
-        await open_browser(bot, m.chat.id)
+async def on_dash_button(m: Message):
+    await cmd_dashboard(m)
 
 
-@router.callback_query(F.data == "more")
-async def on_browse_inline(cb: CallbackQuery, bot: Bot):
+@router.callback_query(F.data.in_({"more", "dash"}))
+async def on_dash_inline(cb: CallbackQuery):
     await cb.answer()
-    if allowed(cb.from_user.id):
-        await open_browser(bot, cb.message.chat.id)
+    await cmd_dashboard(cb.message, user_id=cb.from_user.id)
 
 
 @router.message(F.text == STATS_TEXT)
@@ -428,7 +438,7 @@ TEMP_DB_WARNING = ("\n\n⚠️ Railway'da volume ulanmagan: har yangilanishda st
 async def cmd_help(m: Message):
     await m.answer(
         "EduGrants agenti.\n\n"
-        f"{SEARCH_TEXT} tugmasi yoki /find — hozir qidirish\n{BROWSE_TEXT} tugmasi yoki /list — navbatdagi topilmalar (⬅️ ➡️ bilan varaqlang)\n/panel — qidirish tugmasini guruhda qadab qo'yish\n/profile — kanal profili\n/queue — navbat holati\n/stats — 30 kunlik statistika va xarajat\n/dashboard — agent nimani o'tkazdi va nimani tashladi\n"
+        f"{SEARCH_TEXT} tugmasi yoki /find — hozir qidirish\n{DASH_TEXT} tugmasi yoki /dashboard — topilmalar, ✅ Olamiz / ❌ Kerak emas, xarajatlar\n/panel — qidirish tugmasini guruhda qadab qo'yish\n/profile — kanal profili\n/queue — navbat holati\n/stats — 30 kunlik statistika va xarajat\n"
         "/health — manbalar holati\n/errors — oxirgi xatolar\n/retry — xato bo'lganlarni qayta urinish\n\n"
         f"Chat ID: <code>{m.chat.id}</code>, sizning ID: <code>{m.from_user.id}</code>",
         reply_markup=main_keyboard(),
@@ -436,15 +446,16 @@ async def cmd_help(m: Message):
 
 
 @router.message(Command("dashboard"))
-async def cmd_dashboard(m: Message):
-    if not allowed(m.from_user.id):
+async def cmd_dashboard(m: Message, user_id: int | None = None):
+    if not allowed(user_id if user_id is not None else m.from_user.id):
         return
     url = dashboard_url()
-    await m.answer("📈 Agent tekshirgan grantlar: nimani o'tkazdi, nimani tashladi va nega.",
-                   reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📈 Dashboardni ochish", url=url)]])
-                   if url.startswith("https://") else None)
-    if not url.startswith("https://"):
-        await m.answer(f"Havola (faqat shu kompyuterda ochiladi): {escape(url)}")
+    text = "📈 Topilmalar, agent nimani tashlagani va xarajatlar: hammasi dashboardda."
+    if url.startswith("https://"):
+        await m.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📈 Dashboardni ochish", url=url)]]))
+    else:
+        await m.answer(f"{text}\nHavola (faqat shu kompyuterda ochiladi): {escape(url)}")
 
 
 @router.message(Command("profile"))
@@ -479,7 +490,7 @@ async def cmd_stats(m: Message):
         f"Topildi: {sum(c.values())}\nTakrorlar: {c.get('duplicate', 0)}\n"
         f"Filtrdan o'tmadi: {c.get('rejected', 0)} (shundan post formatiga to'g'ri kelmadi: {fmt})\n"
         f"Sizga ko'rsatildi: {c.get('shown', 0) + taken + c.get('skipped', 0)}\n"
-        f"Navbatda kutmoqda: {c.get('extracted', 0)} ({BROWSE_TEXT})\n"
+        f"Navbatda kutmoqda: {c.get('extracted', 0)} ({DASH_TEXT})\n"
         f"Olindi: {taken}\nKerak emas: {c.get('skipped', 0)}\n"
         f"AI xarajati: ~${s['cost_usd']} ({s['tokens_in']:,} in / {s['tokens_out']:,} out tokens)"
         + (TEMP_DB_WARNING if database_is_temporary() else "")
@@ -663,7 +674,6 @@ async def main() -> None:
                     "there, put the chat id in .env and restart.")
     await bot.set_my_commands([
         BotCommand(command="find", description="Hozir qidirish"),
-        BotCommand(command="list", description="Navbatdagi topilmalar"),
         BotCommand(command="panel", description="Qidirish tugmasini qadash"),
         BotCommand(command="stats", description="Statistika"),
         BotCommand(command="dashboard", description="Agent dashboardi"),

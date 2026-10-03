@@ -41,6 +41,21 @@
   @media (max-width: 720px) { .funnel { grid-template-columns: repeat(3, 1fr); } }
   .note { color: var(--muted); font-size: 12.5px; margin: 0 0 18px; }
 
+  .costs { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; }
+  .costs h2, .reasons h2 { font-size: 14px; margin: 0 0 10px; }
+  .money { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .money div { background: var(--chip); border-radius: 8px; padding: 8px 10px; }
+  .money b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+  .money span { color: var(--muted); font-size: 12px; }
+  @media (max-width: 560px) { .money { grid-template-columns: repeat(2, 1fr); } }
+  .spark { display: flex; align-items: flex-end; gap: 3px; height: 70px; margin: 14px 0 4px; }
+  .spark div { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; opacity: .85; }
+  .spark div:hover { opacity: 1; }
+  .spark-axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 11.5px; }
+  .jobs { margin-top: 12px; font-size: 13px; }
+  .jobs div { display: flex; justify-content: space-between; padding: 4px 0; border-top: 1px solid var(--line); }
+  .jobs div span:last-child { font-variant-numeric: tabular-nums; }
+  .skipbox { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
   .reasons { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; }
   .reasons h2 { font-size: 14px; margin: 0 0 8px; }
   .bar { display: grid; grid-template-columns: minmax(120px, 260px) 1fr 32px; align-items: center; gap: 10px; font-size: 13px; margin: 5px 0; }
@@ -112,6 +127,7 @@
   <div class="funnel" id="funnel"></div>
   <p class="note">«Vibe filtri»: AI sarlavha va qisqa matnni o'qib, kanalga mos emas deb tashlaganlar. Ular uchun O'zbekiston va muddat tekshirilmagan, shuning uchun pastdagi ro'yxatda yo'q.</p>
 
+  <div class="costs" id="costs"></div>
   <div class="reasons" id="reasons" hidden></div>
 
   <div class="tabs" id="tabs"></div>
@@ -131,6 +147,8 @@
 const KEY = new URLSearchParams(location.search).get("key") || "";
 const LABEL = { queue: "Navbatda", taken: "Olindi", skipped: "Muharrir o'tkazdi", rejected: "Agent tashladi" };
 const TABS = [["all", "Hammasi"], ["queue", "Navbatda"], ["taken", "Olindi"], ["skipped", "Muharrir o'tkazdi"], ["rejected", "Agent tashladi"]];
+const SKIP = [["fit", "🎯 Bizga mos emas"], ["fee", "💸 Pullik"], ["dup", "🔁 Allaqachon bor"],
+              ["late", "⏳ Kech"], ["age", "👤 Yosh mos emas"], ["bad", "🚩 Ishonchsiz"]];
 let DATA = null, tab = "all";
 
 const $ = (id) => document.getElementById(id);
@@ -158,6 +176,25 @@ function renderFunnel(f) {
                  ["checked", "Rasmiy sahifa tekshirildi"], ["two_rules", "Talablarga mos"], ["shown_to_editors", "Sizga chiqdi"]];
   $("funnel").replaceChildren(...steps.map(([k, label]) =>
     el("div", { class: "step" + (k === "two_rules" ? " key" : "") }, el("b", { text: String(f[k] ?? 0) }), el("span", { text: label }))));
+}
+
+const usd = (x) => x == null ? "—" : "$" + (x < 1 ? x.toFixed(3) : x.toFixed(2));
+
+function renderCosts(c) {
+  if (!c) return;
+  const max = Math.max(...c.daily.map(d => d.usd), 0.0001);
+  const tiles = [["Bugun", c.today], ["Oxirgi 7 kun", c.week], ["Shu oy", c.month], ["Jami" + (c.since ? " (" + c.since.split(" ")[0] + " dan)" : ""), c.total]];
+  const kids = [
+    el("h2", { text: "💵 AI xarajati (Claude)" }),
+    el("div", { class: "money" }, ...tiles.map(([label, v]) => el("div", {}, el("b", { text: usd(v) }), el("span", { text: label })))),
+    el("div", { class: "spark" }, ...c.daily.map(d => el("div", { style: `height:${Math.max(3, Math.round(d.usd / max * 100))}%`, title: `${d.day}: ${usd(d.usd)}` }))),
+    el("div", { class: "spark-axis" }, el("span", { text: c.daily[0]?.day.slice(5) || "" }), el("span", { text: "kunlik" }), el("span", { text: "bugun" })),
+  ];
+  const jobs = el("div", { class: "jobs" }, ...c.jobs.map(j => el("div", {}, el("span", { text: `${j.job} · ${j.calls} marta` }), el("span", { text: usd(j.usd) }))));
+  if (c.per_taken != null) jobs.append(el("div", {}, el("strong", { text: `1 ta olingan grant narxi (${c.taken} ta olindi)` }), el("strong", { text: "≈ " + usd(c.per_taken) })));
+  if (c.fixed_month) jobs.append(el("div", {}, el("span", { text: "Server (Railway), oyiga" }), el("span", { text: usd(c.fixed_month) })));
+  kids.push(jobs);
+  $("costs").replaceChildren(...kids);
 }
 
 function renderReasons(reasons) {
@@ -207,6 +244,11 @@ function card(it) {
   if (it.verdict !== "taken") {
     actions.append(el("button", { class: "btn primary", onclick: (e) => act(it, "take", e.target), text: "✅ Olamiz" }));
     if (it.verdict !== "queue") actions.append(el("button", { class: "btn", onclick: (e) => act(it, "queue", e.target), text: "↩️ Navbatga qaytarish" }));
+    else actions.append(el("button", { class: "btn", text: "❌ Kerak emas", onclick: (e) => {
+      const box = el("div", { class: "skipbox" }, el("span", { class: "muted", text: "Sababi:" }),
+        ...SKIP.map(([code, label]) => el("button", { class: "btn", text: label, onclick: (ev) => act(it, "skip", ev.target, code) })));
+      e.target.replaceWith(box);
+    } }));
   }
   actions.append(el("span", { class: "links" },
     el("a", { href: safeUrl(it.official), target: "_blank", rel: "noopener", text: "Rasmiy sahifa" }),
@@ -216,10 +258,10 @@ function card(it) {
   return el("div", { class: "card" }, ...kids);
 }
 
-async function act(it, action, btn) {
+async function act(it, action, btn, reason) {
   btn.disabled = true;
   const r = await fetch("/api/action", { method: "POST", headers: { "X-Key": KEY, "Content-Type": "application/json" },
-                                         body: JSON.stringify({ action, id: it.id }) });
+                                         body: JSON.stringify({ action, id: it.id, reason }) });
   const out = await r.json().catch(() => ({}));
   toast(out.message || out.error || "Xato");
   await load();
@@ -229,6 +271,7 @@ function render() {
   if (!DATA) return;
   $("rules").replaceChildren(...(DATA.rules || []).map(r => el("span", { class: "rule" + (r.startsWith("⚠️") ? " off" : ""), text: (r.startsWith("⚠️") ? "" : "✓ ") + r })));
   renderFunnel(DATA.funnel);
+  renderCosts(DATA.costs);
   renderReasons(DATA.reasons);
   renderTabs(DATA.items);
   const q = $("q").value.trim().toLowerCase();

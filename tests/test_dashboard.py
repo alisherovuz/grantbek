@@ -106,3 +106,30 @@ def test_take_from_dashboard_marks_it_taken(monkeypatch):
         r = await client.post("/api/action", json={"action": "take", "id": rid}, headers={"X-Key": dashboard.dashboard_key()})
         assert r.status == 200 and d.get(rid)["status"] == "accepted"
     run(check)
+
+
+def test_cost_tracker_counts_today_and_per_job(monkeypatch):
+    monkeypatch.setattr(settings, "timezone", "Asia/Tashkent")
+    d = sample()
+    d.log_usage("triage", "haiku", 1000, 100, 0.02)
+    d.log_usage("extract", "haiku", 1000, 100, 0.05)
+    d.log_usage("write", "sonnet", 1000, 100, 0.03)
+    d.conn.execute("INSERT INTO llm_usage(at,purpose,model,input_tokens,output_tokens,cost_usd)"
+                   " VALUES (datetime('now','-3 days'),'triage','haiku',1,1,0.5)")
+    c = dashboard.costs(d, 7)
+    assert c["today"] == 0.1 and c["week"] == 0.6 and c["total"] == 0.6
+    assert c["jobs"][0] == {"job": "Saralash (vibe filtri)", "usd": 0.52, "calls": 2}
+    assert len(c["daily"]) == 7 and c["daily"][-1]["usd"] == 0.1
+    assert c["taken"] == 2 and c["per_taken"] == 0.3        # $0.60 / 2 taken grants
+
+
+def test_skip_from_dashboard(monkeypatch):
+    monkeypatch.setattr(settings, "bot_token", "123:abc")
+
+    async def check(client, d):
+        rid = d.conn.execute("SELECT id FROM items WHERE title='Grant queue'").fetchone()[0]
+        r = await client.post("/api/action", json={"action": "skip", "id": rid, "reason": "fee"},
+                              headers={"X-Key": dashboard.dashboard_key()})
+        assert r.status == 200 and d.get(rid)["status"] == "skipped" and d.get(rid)["reason"] == "Pullik"
+        assert "Grant queue (Pullik)" in d.feedback_examples()["skipped"]   # the agent learns from it
+    run(check)
