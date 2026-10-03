@@ -35,10 +35,14 @@ def hard_rules_text() -> str:
     if settings.require_free_participation:
         rules.append("the participant pays nothing to take part (fully funded, or free)")
     if settings.check_ages:
-        rules.append(f"ages overlap {settings.age_min}-{settings.age_max}")
+        rules.append(f"open to people aged {settings.age_min}-{settings.age_max} (the age range must overlap it)")
     lines = ["HARD RULES (drop only if one of these is clearly broken):"] + [f"- {r}" for r in rules]
     lines.append("Also drop things that are not an opportunity for an individual young person: job vacancies, "
                  "grants only for organisations or companies, and programmes only for citizens of one other country.")
+    lines.append(f"AUDIENCE: about 80% of subscribers are {settings.age_min}-{settings.age_max}: school pupils and "
+                 "first-year students. 95% of the programmes the channel posted were open to under-18s. Score highest "
+                 "what a 15-year-old or a first-year bachelor student can apply to; something only for people over "
+                 f"{settings.age_max} is a 1.")
     if not settings.require_free_participation:
         lines.append("Cost of taking part, age range and study level are NOT reasons to drop. Use them only "
                      "for the fit score.")
@@ -76,6 +80,22 @@ def level_reason(data: dict, fit: int | None) -> str | None:
     if grad_only(data) and (fit or 0) < settings.grad_only_min_fit:
         return f"level: only {'/'.join(sorted(set(data.get('level') or [])))} (fit {fit or 0})"
     return None
+
+
+YOUNG_LEVELS = {"high_school", "bachelor", "any"}
+
+
+def fits_audience_age(data: dict) -> bool:
+    """Open to someone aged AGE_MIN..AGE_MAX: by the stated ages, or, if none, by study level."""
+    lo, hi = data.get("age_min"), data.get("age_max")
+    if lo is not None or hi is not None:
+        return not ((lo is not None and lo > settings.age_max) or (hi is not None and hi < settings.age_min))
+    return not grad_only(data)
+
+
+def open_to_school_pupils(data: dict) -> bool:
+    lo = data.get("age_min")
+    return (lo is not None and lo <= 18) or "high_school" in (data.get("level") or [])
 
 
 def format_gaps(data: dict, official_url: str | None, aggregators: set[str] = AGGREGATOR_DOMAINS) -> list[str]:

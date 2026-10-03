@@ -21,7 +21,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .config import database_is_temporary, settings
 from .dashboard import MANUAL_REASON, dashboard_url
 from .db import DB
-from .pipeline import AGGREGATOR_DOMAINS, Pipeline, format_gaps, level_reason
+from .pipeline import AGGREGATOR_DOMAINS, Pipeline, format_gaps, level_reason, open_to_school_pupils
 from .publish import push_to_platform
 from .render import finder_card, uz_date
 
@@ -126,11 +126,12 @@ def ordered_finds(limit: int | None = None) -> list[tuple]:
             db().update(r["id"], status="rejected", reason=lvl)
             continue
         text, taken = finder_card(db(), r)
-        cards.append((taken, 1 if r["history_id"] else 0, -(r["fit_score"] or 0),
+        school = 0 if open_to_school_pupils(json.loads(r["data_json"] or "{}")) else 1   # most subscribers are 12-20
+        cards.append((taken, 1 if r["history_id"] else 0, -(r["fit_score"] or 0), school,
                       -(datetime.strptime(r["published_at"][:19], "%Y-%m-%d %H:%M:%S").timestamp()
                         if r["published_at"] else 0), r["id"], r, text))
-    cards.sort(key=lambda c: c[:5])
-    return [(c[5], c[6]) for c in cards[:limit]]
+    cards.sort(key=lambda c: c[:6])
+    return [(c[6], c[7]) for c in cards[:limit]]
 
 
 # ---------------------------------------------------------------- the browser

@@ -1,6 +1,7 @@
 """A small web dashboard served by the bot itself: which grants the agent checked, and what it did with them.
 
-It lists only grants that pass the two main requirements (Uzbeks can apply, deadline not passed),
+It lists only grants that pass the main requirements (Uzbeks can apply, deadline not passed, open to
+ages 12-20),
 grouped by what happened: waiting in the queue, taken, skipped by an editor, or dropped by the agent
 (with the reason in Uzbek). Everything the agent cut earlier, from the title alone, appears only as a
 number in the funnel at the top.
@@ -23,6 +24,7 @@ from pathlib import Path
 from aiohttp import web
 
 from .config import settings
+from .pipeline import open_to_school_pupils
 from .render import TYPE_UZ, flag, uz_date
 
 log = logging.getLogger(__name__)
@@ -120,12 +122,26 @@ def days_left(data: dict) -> int | None:
         return None
 
 
-def meets_two_rules(data: dict) -> bool:
-    """Uzbeks can apply (yes, or not ruled out) and the deadline hasn't passed."""
+def meets_main_rules(data: dict, let_through: bool = False) -> bool:
+    """The three main requirements: Uzbeks can apply (yes, or not ruled out), the deadline hasn't
+    passed, and it is open to the audience's ages (12-20 by default). `let_through`: the agent or an
+    editor already accepted it (e.g. a famous master's programme), so the age rule doesn't hide it."""
+    from .pipeline import fits_audience_age
     if not data or data.get("uzbekistan_eligible") == "no" or data.get("status") == "closed":
         return False
     left = days_left(data)
-    return left is None or left >= 0
+    if left is not None and left < 0:
+        return False
+    return let_through or not settings.check_ages or fits_audience_age(data)
+
+
+def rules_text() -> list[str]:
+    """What the agent is enforcing right now (so a wrong Railway variable is visible on the page)."""
+    rules = ["O'zbekistonliklar topshira oladi", "Muddati o'tmagan"]
+    rules.append(f"{settings.age_min}–{settings.age_max} yoshlilar uchun ochiq" if settings.check_ages
+                 else "⚠️ Yosh tekshirilmayapti (CHECK_AGES=false)")
+    rules.append("Ariza to'lovi yo'q")
+    return rules
 
 
 def verdict(row) -> str:
@@ -158,14 +174,16 @@ def build(db, days: int = 14) -> dict:
             continue
         funnel["checked"] += 1
         data = json.loads(r["data_json"] or "{}")
-        if not meets_two_rules(data):
+        v = verdict(r)
+        if not meets_main_rules(data, let_through=v != "rejected"):
             continue
         funnel["two_rules"] += 1
-        v = verdict(r)
         if v != "rejected":
             funnel["shown_to_editors"] += 1
         left = days_left(data)
         levels = [LEVEL_UZ.get(x, x) for x in data.get("level") or []]
+        lo, hi = data.get("age_min"), data.get("age_max")
+        ages = f"{lo}–{hi} yosh" if lo and hi else f"{lo}+ yosh" if lo else f"{hi} yoshgacha" if hi else ""
         items.append({
             "id": r["id"],
             "title": data.get("title") or r["title"],
@@ -174,6 +192,8 @@ def build(db, days: int = 14) -> dict:
             "type": TYPE_UZ.get(data.get("opportunity_type"), "Imkoniyat"),
             "format": FORMAT_UZ.get(data.get("format"), ""),
             "levels": levels,
+            "ages": ages,
+            "school": open_to_school_pupils(data),
             "deadline": ("Doimiy qabul" if data.get("deadline_type") == "rolling"
                          else uz_date(data.get("deadline")) or "noma'lum"),
             "days_left": left,
@@ -198,7 +218,7 @@ def build(db, days: int = 14) -> dict:
         if it["verdict"] == "rejected":
             key = reason_group(it["why"])
             reasons[key] = reasons.get(key, 0) + 1
-    return {"days": days, "funnel": funnel, "items": items,
+    return {"days": days, "funnel": funnel, "items": items, "rules": rules_text(),
             "reasons": sorted(reasons.items(), key=lambda kv: -kv[1]),
             "today": date.today().isoformat()}
 

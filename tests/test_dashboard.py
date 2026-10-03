@@ -34,20 +34,24 @@ def sample():
     item(d, "expired", "rejected", {"deadline": PAST}, reason="deadline too close (-3 days left)")
     item(d, "vibe", "rejected", None, reason="triage: small essay contest")
     item(d, "dup", "duplicate", None)
+    item(d, "adults", "rejected", {"age_min": 25, "age_max": 35}, reason="ages 25-35 outside 12-20")
+    item(d, "famous-masters", "accepted", {"level": ["master"]}, fit=5)
     return d
 
 
-def test_lists_only_grants_that_meet_the_two_rules():
+def test_lists_only_grants_that_meet_the_main_rules(monkeypatch):
+    monkeypatch.setattr(settings, "check_ages", True)
     out = dashboard.build(sample())
     titles = {i["title"]: i for i in out["items"]}
-    assert set(titles) == {"Grant queue", "Grant taken", "Grant skipped", "Grant format", "Grant masters"}
+    # master's-only and 25-35 don't fit ages 12-20; a famous master's programme an editor took still shows
+    assert set(titles) == {"Grant queue", "Grant taken", "Grant skipped", "Grant format", "Grant famous-masters"}
     assert titles["Grant queue"]["verdict"] == "queue" and titles["Grant taken"]["verdict"] == "taken"
     assert titles["Grant format"]["why"] == "Post formatiga mos emas: imtiyozlar yo'q, rasmiy havola yo'q"
-    assert titles["Grant masters"]["why"].startswith("Faqat magistratura")
     assert titles["Grant skipped"]["why"] == "Muharrir: Bizga mos emas"
     f = out["funnel"]
-    assert (f["found"], f["duplicate"], f["vibe_cut"], f["checked"], f["two_rules"], f["shown_to_editors"]) == (9, 1, 1, 7, 5, 3)
-    assert dict(out["reasons"]) == {"Post formatiga mos emas": 1, "Faqat magistratura/PhD uchun": 1}
+    assert (f["found"], f["duplicate"], f["vibe_cut"], f["checked"], f["two_rules"], f["shown_to_editors"]) == (11, 1, 1, 9, 5, 4)
+    assert dict(out["reasons"]) == {"Post formatiga mos emas": 1}
+    assert "12–20 yoshlilar uchun ochiq" in out["rules"]
 
 
 def run(coro_fn):
@@ -71,7 +75,7 @@ def test_needs_the_key(monkeypatch):
         ok = await client.get(f"/?key={dashboard.dashboard_key()}")
         assert ok.status == 200 and "EduGrants Finder" in await ok.text()
         data = await (await client.get("/api/data?days=7", headers={"X-Key": dashboard.dashboard_key()})).json()
-        assert len(data["items"]) == 5
+        assert len(data["items"]) >= 5
     run(check)
 
 

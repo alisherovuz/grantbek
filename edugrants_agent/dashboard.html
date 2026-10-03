@@ -29,6 +29,10 @@
          border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
   input[type=search] { flex: 1; min-width: 160px; }
 
+  .rules { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .rule { font-size: 12.5px; padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .rule.off { background: var(--warn-soft); color: var(--warn); }
+  .chip.school { background: var(--accent-soft); color: var(--accent); }
   .funnel { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 18px 0 8px; }
   .step { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
   .step b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
@@ -93,7 +97,8 @@
   <header>
     <div>
       <h1>EduGrants Finder</h1>
-      <div class="sub">Agent tekshirgan grantlar: O'zbekistonliklar uchun ochiq va muddati o'tmaganlar</div>
+      <div class="sub">Agent tekshirgan va asosiy talablarga mos grantlar</div>
+      <div class="rules" id="rules"></div>
     </div>
     <select id="days" aria-label="Davr">
       <option value="3">Oxirgi 3 kun</option>
@@ -150,7 +155,7 @@ async function load() {
 
 function renderFunnel(f) {
   const steps = [["found", "Topildi"], ["duplicate", "Takrorlar"], ["vibe_cut", "Vibe filtri tashladi"],
-                 ["checked", "Rasmiy sahifa tekshirildi"], ["two_rules", "2 talabga mos"], ["shown_to_editors", "Sizga chiqdi"]];
+                 ["checked", "Rasmiy sahifa tekshirildi"], ["two_rules", "Talablarga mos"], ["shown_to_editors", "Sizga chiqdi"]];
   $("funnel").replaceChildren(...steps.map(([k, label]) =>
     el("div", { class: "step" + (k === "two_rules" ? " key" : "") }, el("b", { text: String(f[k] ?? 0) }), el("span", { text: label }))));
 }
@@ -178,7 +183,8 @@ function card(it) {
   const meta = el("div", { class: "meta" });
   const chip = (text, cls = "") => text && meta.append(el("span", { class: "chip " + cls, text }));
   chip(it.where); chip(it.type); chip(it.format);
-  if (it.levels.length) chip("👤 " + it.levels.join(", "));
+  if (it.ages) chip("👤 " + it.ages, it.school ? "school" : "");
+  if (it.levels.length) chip("🎓 " + it.levels.join(", "));
   const dl = it.days_left === null ? it.deadline : `${it.deadline} · ${it.days_left} kun`;
   chip("📅 " + dl, it.days_left !== null && it.days_left <= 14 ? "soon" : "");
   if (it.uz === "unclear") chip("❓ O'zbekiston aniq emas", "q");
@@ -221,6 +227,7 @@ async function act(it, action, btn) {
 
 function render() {
   if (!DATA) return;
+  $("rules").replaceChildren(...(DATA.rules || []).map(r => el("span", { class: "rule" + (r.startsWith("⚠️") ? " off" : ""), text: (r.startsWith("⚠️") ? "" : "✓ ") + r })));
   renderFunnel(DATA.funnel);
   renderReasons(DATA.reasons);
   renderTabs(DATA.items);

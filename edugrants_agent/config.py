@@ -98,11 +98,12 @@ class Settings:
     # Finder rules (what counts as "our vibe")
     mode: str = field(default_factory=lambda: _env("MODE", "finder"))  # finder | full
     age_min: int = field(default_factory=lambda: _int("AGE_MIN", 12))
-    age_max: int = field(default_factory=lambda: _int("AGE_MAX", 40))
+    age_max: int = field(default_factory=lambda: _int("AGE_MAX", 20))
     # Hard rules. Only "Uzbeks can apply" and "no application fee" are always on; the rest are optional.
     require_uz_yes: bool = field(default_factory=lambda: _env("REQUIRE_UZ_YES", "false").lower() == "true")
     require_free_participation: bool = field(default_factory=lambda: _env("REQUIRE_FREE_PARTICIPATION", "false").lower() == "true")
-    check_ages: bool = field(default_factory=lambda: _env("CHECK_AGES", "false").lower() == "true")
+    # ~80% of subscribers are 12-20; 98% of the channel's past programmes were open to that age range
+    check_ages: bool = field(default_factory=lambda: _env("CHECK_AGES", "true").lower() == "true")
     allow_full_aid: bool = field(default_factory=lambda: _env("ALLOW_FULL_AID", "false").lower() == "true")
     min_fit_score: int = field(default_factory=lambda: _int("MIN_FIT_SCORE", 2))
     recent_post_days: int = field(default_factory=lambda: _int("RECENT_POST_DAYS", 60))

@@ -357,3 +357,16 @@ def test_post_links_to_the_organiser_not_the_aggregator():
     d = {**POST_READY, "registration_url": "https://opportunitydesk.org/x"}
     assert post_link(d, "https://camp.example/") == "https://camp.example/"
     assert post_link({**d, "registration_url": "https://forms.gle/abc"}, "https://camp.example/") == "https://forms.gle/abc"
+
+
+@pytest.mark.parametrize("ages,ok", [((14, 18), True), ((18, 35), True), ((None, None), True),
+                                     ((21, 35), False), ((25, None), False), ((8, 11), False)])
+def test_audience_is_12_to_20_by_default(monkeypatch, ages, ok):
+    from edugrants_agent.config import Settings
+    monkeypatch.delenv("CHECK_AGES", raising=False)
+    monkeypatch.delenv("AGE_MAX", raising=False)
+    fresh = Settings()
+    assert fresh.check_ages and (fresh.age_min, fresh.age_max) == (12, 20)
+    monkeypatch.setattr(settings, "age_max", 20)
+    data = {**BASE, "age_min": ages[0], "age_max": ages[1]}
+    assert (Pipeline.reject_reason(data) is None) is ok
