@@ -178,6 +178,13 @@
   <section class="pane" id="pane-system" hidden>
     <div class="box" id="errorsBox"></div>
     <div class="box" id="sourcesBox"></div>
+    <div class="box">
+      <h2><span>🧹 Tarixni tozalash</span></h2>
+      <p class="muted" style="margin:0 0 10px;font-size:13.5px">Hamma topilmalarni o'chiradi: keyingi qidiruv noldan boshlanadi.
+        Kanal tarixi (850 dastur) va ✅ Olamiz bilan olinganlar saqlanadi, ular qaytib kelmaydi.</p>
+      <label style="font-size:13.5px"><input type="checkbox" id="resetCosts"> Xarajatlar tarixini ham o'chirish</label>
+      <div class="actions"><button class="btn" id="resetBtn" style="border-color:var(--bad);color:var(--bad)">🧹 Topilmalarni tozalash</button></div>
+    </div>
   </section>
 </div>
 <div class="toast" id="toast" role="status"></div>
@@ -380,6 +387,16 @@ $("searchBtn").addEventListener("click", async () => {
   const out = await r.json().catch(() => ({}));
   toast(out.message || out.error || "Xato");
   loadSystem();
+});
+
+$("resetBtn").addEventListener("click", async () => {
+  const costs = $("resetCosts").checked;
+  if (!confirm("Hamma topilmalar o'chiriladi" + (costs ? " (xarajatlar ham)" : "") + ". Davom etamizmi?")) return;
+  const r = await fetch("/api/reset", { method: "POST", headers: { "X-Key": KEY, "Content-Type": "application/json" },
+                                         body: JSON.stringify({ costs }) });
+  const out = await r.json().catch(() => ({}));
+  toast(out.message || out.error || "Xato");
+  load(); loadSystem();
 });
 
 $("days").addEventListener("change", load);

@@ -168,3 +168,23 @@ def test_search_button_and_system_panel(monkeypatch):
         assert sysinfo["searching"] is False and sysinfo["last_search"]["seen"] == 7
         assert sent and sent[0].startswith("🔎 Dashboarddan qidiruv: 7 ta yangi e'lon")
     run(check, bot=B())
+
+
+def test_reset_from_dashboard_keeps_channel_history_and_costs(monkeypatch):
+    monkeypatch.setattr(settings, "bot_token", "123:abc")
+    from edugrants_agent import bot as botmod
+
+    async def check(client, d):
+        botmod.STATE.update(db=d, lock=asyncio.Lock())
+        d.log_usage("triage", "m", 1, 1, 0.1)
+        d.replace_history([{"norm_title": "chevening", "title": "Chevening", "category": "", "country": "", "age": "",
+                            "first_posted": "2025-01-01", "last_posted": "2025-01-01", "times_posted": 1, "post_dates": "[]",
+                            "official_url": None, "edugrants_url": None, "reactions_max": 1, "score": 1.0}])
+        k = {"X-Key": dashboard.dashboard_key()}
+        r = await client.post("/api/reset", json={"costs": False}, headers=k)
+        assert r.status == 200 and "11 ta topilma" in (await r.json())["message"]
+        assert d.conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+        assert len(d.history_rows()) == 1 and dashboard.costs(d, 7)["total"] == 0.1
+        await client.post("/api/reset", json={"costs": True}, headers=k)
+        assert dashboard.costs(d, 7)["total"] == 0
+    run(check)

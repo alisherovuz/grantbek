@@ -209,6 +209,18 @@ class DB:
     def health(self) -> list[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM source_health ORDER BY source").fetchall()
 
+    def reset_finds(self, costs: bool = False) -> int:
+        """Forget every find (and what each source last read), so the next search starts fresh.
+        Kept: the channel's history, including programmes taken with ✅ Olamiz, so they never come back."""
+        with self.tx() as c:
+            n = c.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+            for table in ("items", "page_watch", "competitor_posts", "source_health"):
+                c.execute(f"DELETE FROM {table}")
+            c.execute("DELETE FROM meta WHERE key IN ('last_search', 'search_started')")
+            if costs:
+                c.execute("DELETE FROM llm_usage")
+        return n
+
     def get_meta(self, key: str, default=None):
         row = self.conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
         return json.loads(row[0]) if row else default

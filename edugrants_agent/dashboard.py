@@ -378,6 +378,19 @@ async def api_retry(request: web.Request) -> web.Response:
                                                      + (f" · yana xato: {r['failed']}" if r["failed"] else "")})
 
 
+async def api_reset(request: web.Request) -> web.Response:
+    """🧹 Start fresh: forget all finds. The channel history stays; costs only if asked."""
+    if not _authorized(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    from .bot import STATE
+    if STATE.get("lock") and STATE["lock"].locked():
+        return web.json_response({"error": "Qidiruv ketmoqda, tugagach qayta urinib ko'ring"}, status=409)
+    body = await request.json() if request.can_read_body else {}
+    n = request.app[DB_KEY]().reset_finds(costs=bool(body.get("costs")))
+    return web.json_response({"ok": True, "message": f"Tozalandi: {n} ta topilma o'chirildi" +
+                              (", xarajatlar ham" if body.get("costs") else "")})
+
+
 async def health(request: web.Request) -> web.Response:
     return web.Response(text="ok")
 
@@ -392,6 +405,7 @@ def make_app(db_getter, bot=None) -> web.Application:
     app.router.add_get("/api/system", api_system)
     app.router.add_post("/api/search", api_search)
     app.router.add_post("/api/retry", api_retry)
+    app.router.add_post("/api/reset", api_reset)
     app.router.add_get("/health", health)
     return app
 

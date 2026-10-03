@@ -114,10 +114,7 @@ def main() -> None:
         return
 
     if args.cmd == "reset":   # forget all finds, so everything is new again; channel history stays
-        with db.tx() as c:
-            n = c.execute("SELECT COUNT(*) FROM items").fetchone()[0]
-            for table in ("items", "page_watch", "competitor_posts", "source_health"):
-                c.execute(f"DELETE FROM {table}")
+        n = db.reset_finds()
         print(f"Forgot {n} finds. The channel history ({len(db.history_rows())} programmes) is kept.")
         return
 
