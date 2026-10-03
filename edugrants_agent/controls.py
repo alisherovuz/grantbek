@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 # key: (type, group, label, help)
 EDITABLE = {
-    "run_at": ("time", "finder", "Kunlik qidiruv vaqti", "Eshmat har kuni shu vaqtda qidiradi"),
+    "run_at": ("time", "finder", "Kunlik qidiruv vaqti", "Ergash har kuni shu vaqtda qidiradi"),
     "check_ages": ("bool", "finder", "Yoshni tekshirish", "O'chirilsa yosh qoidasi ishlamaydi"),
     "age_min": ("int", "finder", "Eng kichik yosh", "Dastur shu yoshni ham qabul qilishi kerak"),
     "age_max": ("int", "finder", "Eng katta boshlang'ich yosh", "Masalan 20: 18–35 o'tadi, 21–30 o'tmaydi"),
@@ -28,7 +28,7 @@ EDITABLE = {
     "weekly_at": ("text", "writer", "Haftalik ro'yxat vaqti", "Masalan: mon 08:30"),
     "community_refresh_at": ("time", "community", "GrantBek bilimini yangilash vaqti", "Kanalni qayta o'qiydi, FAQ tuzadi"),
     "report_at": ("time", "manager", "Kunlik hisobot vaqti", "Toshmat aka guruhga yozadi"),
-    "budget_finder": ("money", "finder", "Eshmat: kunlik AI byudjeti, $", "0 = cheklovsiz"),
+    "budget_finder": ("money", "finder", "Ergash: kunlik AI byudjeti, $", "0 = cheklovsiz"),
     "budget_writer": ("money", "writer", "Mirzo: kunlik AI byudjeti, $", "0 = cheklovsiz"),
     "budget_community": ("money", "community", "GrantBek: kunlik AI byudjeti, $", "0 = cheklovsiz"),
     "budget_manager": ("money", "manager", "Toshmat aka: kunlik AI byudjeti, $", "0 = cheklovsiz"),

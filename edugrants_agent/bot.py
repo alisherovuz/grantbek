@@ -63,9 +63,12 @@ def review_header(item) -> str:
     data = json.loads(item["data_json"] or "{}")
     verified = "✔️ rasmiy sahifada tekshirildi" if data.get("verified_from_official") else "⚠️ faqat agregatordan"
     deadline = "doimiy" if data.get("deadline_type") == "rolling" else (uz_date(data.get("deadline")) or "?")
-    links = f'<a href="{escape(item["url"], quote=True)}">e\'lon</a>'
+    parts = []
+    if (item["url"] or "").startswith("http"):
+        parts.append(f'<a href="{escape(item["url"], quote=True)}">e\'lon</a>')
     if item["official_url"]:
-        links += f' | <a href="{escape(item["official_url"], quote=True)}">rasmiy sahifa</a>'
+        parts.append(f'<a href="{escape(item["official_url"], quote=True)}">rasmiy sahifa</a>')
+    links = " | ".join(parts) or "egasi bergan matn"
     lines = [f"🆕 <b>#{item['id']}</b> · {escape(item['source'])} · muddat: {deadline}",
              f"{verified} · ishonch: {data.get('confidence', '?')}",
              f"Manbalar: {links}"]
@@ -326,8 +329,8 @@ async def auto_write(bot: Bot, task_id: int | None = None) -> int:
     strong = [item for item, _ in ordered_finds() if (item["fit_score"] or 0) >= settings.auto_write_min_fit][:max(room, 0)]
     if not strong:
         return 0
-    mirzo, eshmat = AGENTS["writer"]["name"], AGENTS["finder"]["name"]
-    await say("manager", f"{eshmat} {len(strong)} ta kuchli grant topdi. {mirzo}, postlarini yoz: " +
+    mirzo, ergash = AGENTS["writer"]["name"], AGENTS["finder"]["name"]
+    await say("manager", f"{ergash} {len(strong)} ta kuchli grant topdi. {mirzo}, postlarini yoz: " +
               ", ".join(escape(i["title"][:60], quote=False) for i in strong), kind="task", task_id=task_id, fallback_bot=bot)
     for item in strong:
         take(item, 0)
@@ -346,7 +349,7 @@ async def scheduled_search(bot: Bot, fast_only: bool = False) -> None:
     from .controls import may_work
     why = may_work(db(), "finder")
     if why:
-        log_event("manager", "info", f"Kunlik qidiruv o'tkazib yuborildi: Eshmat {why}")
+        log_event("manager", "info", f"Kunlik qidiruv o'tkazib yuborildi: Ergash {why}")
         return
     await run_cycle(bot, True, fast_only)
 
@@ -485,7 +488,8 @@ async def on_take(cb: CallbackQuery, bot: Bot):
         await write_and_send(bot, item_id, cb.message.chat.id, reply_to=cb.message.message_id)
 
 
-async def write_and_send(bot: Bot, item_id: int, chat_id: int, reply_to: int | None = None, by: str = "") -> None:
+async def write_and_send(bot: Bot, item_id: int, chat_id: int, reply_to: int | None = None, by: str = "",
+                         notes: str | None = None) -> None:
     """Writes the channel post for a taken find and sends it with the publish buttons."""
     title = escape((db().get(item_id)["title"] or "")[:80])
     task_id = db().add_task("write_post", "writer", {"item_id": item_id}, status="working",
@@ -496,7 +500,10 @@ async def write_and_send(bot: Bot, item_id: int, chat_id: int, reply_to: int | N
                                      + (f" (oldi: {escape(by)})" if by else ""), reply_to_message_id=reply_to)
     log_event("writer", "task", f"Post yozish: {title}", task_id)
     try:
-        await asyncio.to_thread(STATE["pipeline"].write, db().get(item_id))
+        if notes:
+            await asyncio.to_thread(STATE["pipeline"].write, db().get(item_id), notes)
+        else:
+            await asyncio.to_thread(STATE["pipeline"].write, db().get(item_id))
     except Exception as e:
         log.exception("write failed")
         db().update(item_id, status="error", reason=f"write: {e}"[:300])
@@ -762,7 +769,7 @@ async def on_edit_reply(m: Message, bot: Bot):
         return
     item_id = STATE["pending_edits"].pop(key, None)
     if item_id is None:
-        return await on_order(m, bot)            # a reply that isn't an edit: treat it as a message to Toshmat aka
+        return await on_order(m, bot)            # a reply that isn't an edit: a message to Toshmat aka about it
     db().update(item_id, post_text=m.html_text, status="drafted")
     await send_review(bot, db().get(item_id))
 
@@ -821,12 +828,36 @@ async def cmd_status(m: Message):
 
 
 # ---------------------------------------------------------------- orders to Toshmat aka in plain words
-@router.message(F.text & ~F.text.startswith("/"))
+def message_html(m) -> str:
+    """A message as Telegram HTML, so hidden links (a "Havola" word) keep their address. Captions too."""
+    for attr in ("html_text", "text", "caption"):
+        try:
+            value = getattr(m, attr, None)
+        except Exception:      # html_text raises on messages without text
+            value = None
+        if value:
+            return value
+    return ""
+
+
+def replied_context(m) -> str | None:
+    """The message the owner replied to, with who wrote it: often the post he is talking about."""
+    r = getattr(m, "reply_to_message", None)
+    if r is None:
+        return None
+    text = message_html(r)
+    if not text:
+        return None
+    who = getattr(getattr(r, "from_user", None), "first_name", None) or "?"
+    return f"{who}: {text}"
+
+
+@router.message((F.text & ~F.text.startswith("/")) | F.caption)
 async def on_order(m: Message, bot: Bot):
     if not allowed(m.from_user.id) or m.chat.id != settings.admin_chat_id:
         return
     from .manager import handle_order
-    await handle_order(m.text, bot)
+    await handle_order(message_html(m), bot, replied=replied_context(m), reply_to=m.message_id)
 
 
 @router.callback_query(F.data.startswith("pf:"))

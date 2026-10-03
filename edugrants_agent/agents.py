@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 AGENTS = {
     "manager": {"emoji": "🧭", "name": "Toshmat aka", "env": "BOT_TOKEN"},        # the boss: plans, checks, reports
-    "finder": {"emoji": "🔎", "name": "Eshmat", "env": "FINDER_BOT_TOKEN"},        # Toshmat's sidekick, finds grants
+    "finder": {"emoji": "🔎", "name": "Ergash", "env": "FINDER_BOT_TOKEN"},        # Toshmat's sidekick, finds grants
     "writer": {"emoji": "🖋", "name": "Mirzo", "env": "WRITER_BOT_TOKEN"},          # the scribe: posts, Monday list
     "community": {"emoji": "💬", "name": "GrantBek", "env": "COMMUNITY_BOT_TOKEN"},  # answers DMs and comments
 }
@@ -74,12 +74,17 @@ async def check_bots() -> None:
         if id(bot) not in seen:
             try:
                 me = await bot.get_me()
-                seen[id(bot)] = ("ok", me.username)
+                first = getattr(me, "first_name", None)
+                seen[id(bot)] = ("ok", (me.username, first.strip() if isinstance(first, str) and first.strip() else None))
             except Exception as e:
                 seen[id(bot)] = ("bad", f"{type(e).__name__}: {e}"[:200])
         status, info = seen[id(bot)]
         if status == "ok":
-            USERNAMES[agent] = info
+            USERNAMES[agent] = info[0]
+            # The name the group shows is the bot's name in Telegram: use it, so Toshmat aka never
+            # talks about "Ergash" while the group shows "Ergash Topqir".
+            if info[1] and has_own_bot(agent):
+                AGENTS[agent]["name"] = info[1]
             continue
         PROBLEMS[agent] = (f"Telegram {AGENTS[agent]['env']} ni qabul qilmadi: token noto'g'ri, eskirgan yoki "
                            f"BotFather'da bekor qilingan. ({info})")

@@ -63,6 +63,8 @@ class Settings:
     model_fast: str = field(default_factory=lambda: _env("MODEL_FAST", "claude-haiku-4-5-20251001"))
     # Strong model: writing Uzbek text (Uzbek quality matters, so don't use the cheap one here)
     model_writer: str = field(default_factory=lambda: _env("MODEL_WRITER", "claude-sonnet-5-5"))
+    # Toshmat aka's brain: understands orders and runs the team's tools. Empty = the writer's model.
+    model_manager: str | None = field(default_factory=lambda: _env("MODEL_MANAGER"))
 
     # USD per million tokens, used only for the /stats cost estimate. Check current prices.
     price_fast_in: float = field(default_factory=lambda: _float("PRICE_FAST_IN", 1.0))

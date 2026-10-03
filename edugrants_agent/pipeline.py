@@ -331,6 +331,36 @@ class Pipeline:
             return
         self.db.update(item_id, status="extracted", norm_title=norm, **fields)
 
+    def research_given(self, item, url: str | None, text: str | None) -> None:
+        """An opportunity the owner handed in (a link, a pasted post, or both), researched like a find:
+        the owner's text counts as the aggregator source, the organiser's page is read if it can be reached."""
+        title = item["title"]
+        agg_parts, agg_url = ([text] if text else []), url or "owner message"
+        official_url = official_text = None
+        if url:
+            try:
+                page = self.fetch(url)
+            except Exception as e:
+                log.info("#%d owner link not reachable: %s", item["id"], e)
+                page = None
+                official_url = url if domain(url) not in self.aggregators else None
+            if page is not None:
+                if domain(page.final_url) in self.aggregators:
+                    agg_parts.append(page.text)
+                    try:
+                        found = self.llm.find_official(title, page.text, page.links)
+                        cand = found.get("official_url") or found.get("registration_url")
+                        if cand and domain(cand) not in self.aggregators:
+                            official_page = self.fetch(cand)
+                            official_url, official_text = official_page.final_url, official_page.text
+                    except Exception as e:
+                        log.info("#%d official page not reachable: %s", item["id"], e)
+                else:
+                    official_url = page.final_url
+                    if len(page.text) >= 200:   # a form page that needs JavaScript reads as almost nothing
+                        official_text = page.text
+        self._extract_and_filter(item, title, official_text, official_url, "\n\n".join(agg_parts), agg_url)
+
     @staticmethod
     def is_new_intake(previous, data: dict) -> bool:
         """Same official page, but the earlier item's deadline has passed and this one has a
@@ -377,11 +407,11 @@ class Pipeline:
         return None
 
     # ------------------------------------------------------------------ 4
-    def write(self, item) -> None:
+    def write(self, item, notes: str | None = None) -> None:
         data = json.loads(item["data_json"])
         link = post_link(data, item["official_url"], self.aggregators) or item["official_url"] or item["url"]
         try:
-            written = self.llm.write(data, self.options)
+            written = self.llm.write(data, self.options, notes) if notes else self.llm.write(data, self.options)
         except Exception as e:
             self.db.update(item["id"], status="error", reason=f"write: {e}"[:300])
             return

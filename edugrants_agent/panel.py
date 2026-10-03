@@ -203,7 +203,7 @@ async def api_focus(request):
     days = int(body.get("days") or 7)
     db.set_meta("focus", {"text": text, "until": (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d")} if text else {})
     from .agents import note
-    note("manager", "task", f"Eshmatga fokus: {text} ({days} kun)" if text else "Fokus olib tashlandi")
+    note("manager", "task", f"Ergashga fokus: {text} ({days} kun)" if text else "Fokus olib tashlandi")
     return web.json_response({"ok": True, "message": "Fokus saqlandi" if text else "Fokus olib tashlandi"})
 
 

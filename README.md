@@ -96,6 +96,26 @@ cards arrive in the group. Pressing again while a search is running just says it
 
 Re-run `import-history` with a fresh export every month or two so the profile stays current.
 
+## Giving Toshmat aka orders
+
+Write to him in the agents group in plain words, or reply to any message (a pasted post, a card,
+Mirzo's draft) and say what you want. He works with real tools, and only answers after they ran,
+so "Mirzoga aytdim" always means Mirzo really got it:
+
+| You write | What happens |
+|---|---|
+| `buni tekshir` (reply to a post or paste a link) | the finder reads the organiser's page, checks the rules, posts the card |
+| `post yoz` / `Mirzoga ayt, post yozsin` | Mirzo writes the post and the edugrants.uz listing, sends the draft with buttons |
+| `vebsaytga data yozib ber` | the same, then Mirzo posts the listing fields ready to copy into the admin form |
+| `yosh toifasini 16-35 qil` (reply to a draft) | Mirzo rewrites it with your correction |
+| `#142 ni chop et` | published to the channel and sent to edugrants.uz |
+| `yangi grant qidir` · `hisobot` · `haftalik ro'yxat` | search, report, Monday list |
+| `Ergashni to'xtat` · `yoshni 12 dan qil` · `budjetni 2 dollar qil` | pause/resume an agent, change a setting |
+
+Several steps in one message work too ("tekshir, mos bo'lsa post yoz"). Things he can't do, he
+says so. The agents' names come from their bots' names in Telegram. `MODEL_MANAGER` picks his
+model (default: the writer's).
+
 ---
 
 The sections below describe the full setup, including the optional post-writing mode

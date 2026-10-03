@@ -212,11 +212,13 @@ def render_find(item, data: dict, history=None, extra_lines: list[str] | None = 
         lines.append(f"❓ O'zbekiston: {e(data.get('eligible_countries'))}")
     if data.get("conflicts"):
         lines.append(f"⚠️ {e(data['conflicts'][:200])}")
-    official = item["official_url"] or item["url"]
-    links = f'🔗 <a href="{escape(official, quote=True)}">Rasmiy sahifa</a>'
+    found_at = item["url"] if (item["url"] or "").startswith("http") else None   # owner-given text has no URL
+    official = item["official_url"] or found_at
+    links = [f'🔗 <a href="{escape(official, quote=True)}">Rasmiy sahifa</a>'] if official else []
     if data.get("registration_url") and data["registration_url"] != official:
-        links += f' · <a href="{escape(data["registration_url"], quote=True)}">Ariza</a>'
-    if item["official_url"] and item["url"] != item["official_url"] and "#watch-" not in item["canonical_url"]:
-        links += f' · <a href="{escape(item["url"], quote=True)}">Topilgan joy</a>'
-    lines.append(links)
+        links.append(f'<a href="{escape(data["registration_url"], quote=True)}">Ariza</a>')
+    if found_at and item["official_url"] and found_at != item["official_url"] and "#watch-" not in item["canonical_url"]:
+        links.append(f'<a href="{escape(found_at, quote=True)}">Topilgan joy</a>')
+    if links:
+        lines.append(" · ".join(links) if official else "🔗 " + " · ".join(links))
     return "\n".join(lines)

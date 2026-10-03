@@ -75,7 +75,7 @@ def test_home_shows_the_team_and_what_waits_for_you(panel):
         return await (await c.get("/api/home", headers=k)).json()
     h = call(d, toshmat, steps)
     names = [a["name"] for a in h["agents"]]
-    assert names == ["Toshmat aka", "Eshmat", "Mirzo", "GrantBek"]
+    assert names == ["Toshmat aka", "Ergash", "Mirzo", "GrantBek"]
     grantbek = h["agents"][3]
     assert grantbek["state"] == "off" and grantbek["bot"] == "none"          # no token yet
     assert [p["title"] for p in h["inbox"]["posts"]] == ["Diamond Challenge 2027"]
@@ -142,7 +142,7 @@ def test_pausing_and_budgets_stop_an_agent(panel):
     d.log_usage("triage", "m", 1, 1, 0.12)
     assert controls.over_budget(d, "finder") and controls.may_work(d, "finder") == "bugungi byudjet tugadi"
     out = asyncio.run(botmod.run_cycle(toshmat, manual=True))
-    assert out.startswith("💸 Eshmat bugungi AI byudjetini tugatdi")
+    assert out.startswith("💸 Ergash bugungi AI byudjetini tugatdi")
 
 
 def test_your_correction_teaches_grantbek(panel):

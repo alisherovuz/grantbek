@@ -108,7 +108,7 @@ def test_daily_run_always_reports(monkeypatch):
     b = FakeBot()
     asyncio.run(botmod.run_cycle(b, notify=True))
     assert len(b.sent) == 1 and "☀️ Bugungi qidiruv: 12 ta yangi e'lon ko'rildi, mos" in b.sent[0][1]
-    assert b.sent[0][1].startswith("🔎 <b>Eshmat</b>:")        # no own bot yet: tagged message
+    assert b.sent[0][1].startswith("🔎 <b>Ergash</b>:")        # no own bot yet: tagged message
 
 
 def test_check_reports_instead_of_crashing(monkeypatch, tmp_path, capsys):
@@ -147,7 +147,7 @@ def test_bot_main_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "db_path", tmp_path / "b.db")
     monkeypatch.setattr(settings, "history_file", tmp_path / "none.html")
     monkeypatch.setenv("DASHBOARD_PORT", "0")   # any free port
-    monkeypatch.setenv("FINDER_BOT_TOKEN", "654321:ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsr")   # Eshmat has his own bot
+    monkeypatch.setenv("FINDER_BOT_TOKEN", "654321:ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsr")   # Ergash has his own bot
     monkeypatch.delenv("WRITER_BOT_TOKEN", raising=False)                                  # Mirzo doesn't (yet)
     started = {}
 
@@ -354,7 +354,7 @@ def test_masters_only_is_dropped_unless_the_channel_posted_it_before(monkeypatch
 
 
 def test_strong_finds_are_written_without_anyone_pressing_a_button(monkeypatch):
-    """Eshmat finds, Toshmat aka hands the strongest to Mirzo, the post arrives ready to publish."""
+    """Ergash finds, Toshmat aka hands the strongest to Mirzo, the post arrives ready to publish."""
     setup(monkeypatch)
     monkeypatch.setattr(settings, "write_on_accept", True)
     monkeypatch.setattr(settings, "auto_write_per_day", 2)

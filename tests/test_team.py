@@ -1,4 +1,4 @@
-"""Toshmat aka (manager), Eshmat (finder), Mirzo (writer): the agent team in the Telegram group."""
+"""Toshmat aka (manager), Ergash (finder), Mirzo (writer): the agent team in the Telegram group."""
 import asyncio
 import json
 from datetime import date, datetime
@@ -64,7 +64,7 @@ def team(monkeypatch):
     agents._DB["get"] = lambda: d
     toshmat, mirzo = Bot("toshmat", 1), Bot("mirzo", 3)
     agents.BOTS.clear()
-    agents.BOTS.update(manager=toshmat, writer=mirzo)      # Eshmat has no bot of his own yet
+    agents.BOTS.update(manager=toshmat, writer=mirzo)      # Ergash has no bot of his own yet
     yield d, toshmat, mirzo
     agents.BOTS.clear()
 
@@ -153,23 +153,45 @@ def test_daily_report_has_numbers_and_tips(team, monkeypatch):
     assert d.tasks()[0]["type"] == "daily_report" and d.tasks()[0]["status"] == "done"
 
 
-class OrderLLM:
-    def __init__(self, decision):
-        self.decision = decision
-
-    def _call(self, purpose, model, system, user, tool, max_tokens=500):
-        assert "Eshmat" in system and purpose == "order"
-        return self.decision
+class Block:
+    def __init__(self, type, **kw):
+        self.type = type
+        self.__dict__.update(kw)
 
 
-def test_order_sets_a_focus_for_eshmat(team):
+def tool(name, **inp):
+    tool._n = getattr(tool, "_n", 0) + 1
+    return Block("tool_use", id=f"tu{tool._n}", name=name, input=inp)
+
+
+class ScriptLLM:
+    """Plays Toshmat aka's brain: each converse() call returns the next scripted step and records what
+    it was shown (the system prompt, the conversation, the tool results)."""
+
+    def __init__(self, *steps):
+        self.steps, self.seen = list(steps), []
+
+    def converse(self, purpose, model, system, messages, tools, max_tokens=4000):
+        assert purpose == "order"
+        self.seen.append({"system": system, "messages": [dict(m) for m in messages],
+                          "tools": [t["name"] for t in tools]})
+        return type("R", (), {"content": self.steps.pop(0)})()
+
+
+def results_of(llm, step):
+    """The tool results Toshmat aka was given before his step number `step`."""
+    return [json.loads(r["content"]) for r in llm.seen[step]["messages"][-1]["content"]]
+
+
+def test_order_sets_a_focus_for_ergash(team):
     d, toshmat, _ = team
-    botmod.STATE["pipeline"] = type("P", (), {"llm": OrderLLM({"action": "set_focus", "focus_text": "school olympiads",
-                                                                "focus_days": 5, "reply": "Xo'p, Eshmatga aytaman!"})})()
+    llm = ScriptLLM([tool("set_focus", text="school olympiads", days=5)], [Block("text", text="Xo'p, Ergashga aytdim!")])
+    botmod.STATE["pipeline"] = type("P", (), {"llm": llm})()
     asyncio.run(manager.handle_order("bu hafta olimpiadalarni ko'proq top", toshmat))
+    assert "Ergash" in llm.seen[0]["system"] and "set_focus" in llm.seen[0]["tools"]
     assert manager.focus_text(d) == "school olympiads"
     texts = [t for _, t, _ in toshmat.sent]
-    assert texts[0] == "Xo'p, Eshmatga aytaman!" and "Eshmat, 5 kun davomida" in texts[1]
+    assert "Ergash, 5 kun davomida" in texts[0] and texts[-1] == "Xo'p, Ergashga aytdim!"   # the answer comes last
     from edugrants_agent.pipeline import Pipeline
 
     class LLM:
@@ -184,7 +206,8 @@ def test_order_sets_a_focus_for_eshmat(team):
 
 def test_pause_stops_the_daily_search_but_not_manual_ones(team):
     d, toshmat, _ = team
-    botmod.STATE["pipeline"] = type("P", (), {"llm": OrderLLM({"action": "pause_daily_search", "reply": "To'xtatdim."})})()
+    botmod.STATE["pipeline"] = type("P", (), {"llm": ScriptLLM([tool("pause_agent", agent="finder", paused=True)],
+                                                               [Block("text", text="To'xtatdim.")])})()
     asyncio.run(manager.handle_order("qidiruvni to'xtat", toshmat))
     ran = []
 
@@ -196,7 +219,117 @@ def test_pause_stops_the_daily_search_but_not_manual_ones(team):
         asyncio.run(botmod.scheduled_search(toshmat))
     finally:
         botmod.run_cycle = botmod_run
-    assert ran == [] and "Eshmat to'xtatilgan" in d.events()[0]["text"]
+    assert ran == [] and "Ergash to'xtatilgan" in d.events()[0]["text"]
+
+
+BAKU_POST = ("International Dialogue on SDG 17, Baku 2026 forumi\n\nDavlat: Ozarbayjon 🇦🇿\n"
+             "Moliyaviy ta'minot: To'liq va qisman\nYosh toifasi: 16–35 yosh\n\n"
+             "Voice For Rights International Association (VFRI) tomonidan 23–26-noyabr kunlari Bokuda "
+             "o'tkaziladigan 4 kunlik xalqaro forum.\n\n"
+             '🔗Ro\'yxatdan o\'tish uchun: <a href="https://www.vfri.ca/international-dialogue-on-sdg17-baku-2026/">Havola</a>'
+             "\n\n📌Ro'yxatdan o'tishning so'nggi muddati: 24-oktyabr\n\n⚡️@EduGrandsUz")
+
+BAKU_FACTS = {
+    "is_opportunity": True, "title": "International Dialogue on SDG17 - Baku 2026", "organizer": "VFRI",
+    "host_country": "Azerbaijan", "host_country_iso2": "AZ", "opportunity_type": "forum", "level": ["any"],
+    "funding": "partial", "format": "offline", "duration": "4 days", "application_fee": "paid",
+    "program_fee": "paid", "age_min": None, "age_max": None, "deadline_type": "fixed", "deadline": "2026-10-24",
+    "opening_date": None, "status": "open", "eligible_countries": "All countries", "uzbekistan_eligible": "yes",
+    "summary": "A four-day forum in Baku on SDG 17 partnerships for young leaders.",
+    "benefits": ["airfare", "accommodation", "certificate"], "eligibility": "All countries",
+    "application_process": "Online form", "registration_url": "https://www.cognitoforms.com/VFRI/Baku2026",
+    "verified_from_official": True, "conflicts": None, "confidence": "high"}
+
+WRITTEN = {"title_uz": "International Dialogue on SDG 17, Baku 2026 forumi", "country_uz": "Ozarbayjon",
+           "description_uz": "Bokuda 4 kunlik xalqaro forum.", "benefits_uz": ["Aviachipta", "Turar joy"],
+           "age_category_uz": "16–35 yosh",
+           "platform": {"title": "International Dialogue on SDG17, Baku 2026", "imkoniyat_turi": "Konferensiya",
+                        "daraja": "Barcha", "moliyalashtirish": "Qisman", "format": "Oflayn", "davomiylik": "4 kun",
+                        "ariza_tolovi": "Pullik", "description": "Bokuda forum.", "eligibility": "- 16-35 yosh",
+                        "benefits": "- Aviachipta", "application_process": "1. Onlayn forma",
+                        "additional_information": ""}}
+
+
+def test_the_baku_order_really_reaches_mirzo(team, monkeypatch):
+    """The screenshot case: the owner replies to Mirzo's post with "Toshmat, Mirzoga ayt bunga vebsaytga moslab
+    data yozib bersin". Before, Toshmat said he would and nothing happened. Now the finder reads the page, Mirzo
+    writes the post and the listing, the listing is posted in the group, and only then Toshmat answers."""
+    from edugrants_agent.fetch import Page
+    from edugrants_agent.pipeline import Pipeline
+    d, toshmat, mirzo = team
+    monkeypatch.setattr(settings, "mode", "finder")
+    monkeypatch.setattr(settings, "write_on_accept", True)
+
+    async def delete(self):
+        return True
+    monkeypatch.setattr(Msg, "delete", delete, raising=False)
+
+    class LLM(ScriptLLM):
+        written_with = None
+
+        def extract(self, title, official_text, official_url, agg_text, agg_url):
+            assert "Voice For Rights" in official_text and "Davlat: Ozarbayjon" in agg_text   # page AND the post
+            return dict(BAKU_FACTS)
+
+        def find_official(self, *a):
+            raise AssertionError("the link is the organiser's own page, no need to look for it")
+
+        def write(self, data, options, notes=None):
+            LLM.written_with = notes
+            return WRITTEN
+
+    llm = LLM([tool("write_post", text=BAKU_POST, notes="Yosh toifasi: 16-35")],
+              [tool("show_platform_listing", item_id=1)],
+              [Block("text", text="Tayyor! Mirzo #1 uchun post va sayt ma'lumotini yozdi. Ariza pullik, e'tibor bering.")])
+    page = Page(url="u", final_url="https://www.vfri.ca/international-dialogue-on-sdg17-baku-2026/",
+                text="Voice For Rights International. " * 20)
+    botmod.STATE["pipeline"] = Pipeline(d, llm=llm, config={}, options={}, fetcher=lambda url: page)
+
+    asyncio.run(manager.handle_order("Toshmat, Mirzoga ayt bunga vebsaytga moslab data yozib bersin", toshmat,
+                                     replied="Mirzo Qalami O'tkir: " + BAKU_POST, reply_to=55))
+
+    shown = llm.seen[0]["messages"][0]["content"]
+    assert "The owner is replying to this message" in shown and "vfri.ca" in shown   # he sees the post and its link
+    item = d.get(1)
+    assert item["status"] == "in_review" and item["source"] == "owner"
+    assert json.loads(item["platform_json"])["imkoniyat_turi"] == "Konferensiya"
+    assert LLM.written_with == "Yosh toifasi: 16-35"                                # the owner's correction reached Mirzo
+    first = results_of(llm, 1)[0]
+    assert first["ok"] and first["item_id"] == 1 and "listing" in first
+    assert results_of(llm, 2)[0] == {"ok": True, "item_id": 1, "sent_to_group": True}
+    mirzo_said = [t for _, t, _ in mirzo.sent]
+    assert any("Ozarbayjon" in t and "Chop etish" not in t for t in mirzo_said)       # the draft with publish buttons
+    assert any(t.startswith("📋 <b>edugrants.uz uchun ma'lumot</b> · #1") and "Konferensiya" in t for t in mirzo_said)
+    toshmat_said = [t for _, t, _ in toshmat.sent]
+    assert any(t.startswith("Mirzo, «International Dialogue") and "16-35" in t for t in toshmat_said)
+    assert toshmat_said[-1].startswith("Tayyor! Mirzo #1")                          # the answer comes after the work
+    assert any("Kanal qoidasiga to'g'ri kelmaydi: application fee" in t for t in toshmat_said)  # the fee is flagged
+    tasks = {t["type"]: t for t in d.tasks()}
+    assert json.loads(tasks["order"]["result"])["tools"] == ["write_post", "show_platform_listing"]
+    assert tasks["check"]["agent"] == "finder" and tasks["write_post"]["status"] == "done"
+
+
+def test_a_failed_tool_is_reported_as_failed(team):
+    """Toshmat aka is told the tool failed, so he can't say it worked."""
+    d, toshmat, _ = team
+    llm = ScriptLLM([tool("show_platform_listing", item_id=999)], [Block("text", text="#999 topilmadi.")])
+    botmod.STATE["pipeline"] = type("P", (), {"llm": llm})()
+    asyncio.run(manager.handle_order("999 ning sayt ma'lumotini ber", toshmat))
+    out = llm.seen[1]["messages"][-1]["content"][0]
+    assert out["is_error"] and json.loads(out["content"]) == {"ok": False, "error": "no item #999"}
+    assert toshmat.sent[-1][1] == "#999 topilmadi."
+
+
+def test_the_hidden_havola_link_reaches_toshmat():
+    """A forwarded post's "Havola" is a hidden link: the order text keeps its address."""
+    class M:
+        html_text = 'Toshmat buni tekshir <a href="https://x.org/apply">Havola</a>'
+        reply_to_message = type("R", (), {"html_text": "Eski post", "from_user": type("U", (), {"first_name": "Mirzo"})()})()
+    assert "https://x.org/apply" in botmod.message_html(M())
+    assert botmod.replied_context(M()) == "Mirzo: Eski post"
+    from edugrants_agent.orders import first_opportunity_link
+    assert first_opportunity_link('<a href="https://t.me/EduGrandsUz">x</a> <a href="https://x.org/apply">H</a>') \
+        == "https://x.org/apply"
 
 
 # --------------------------------------------------------------------------- who speaks through which bot
@@ -204,7 +337,7 @@ def test_agents_without_their_own_bot_speak_with_a_name_tag(team):
     d, toshmat, mirzo = team
     asyncio.run(agents.say("finder", "3 ta grant topdim"))
     asyncio.run(agents.say("writer", "Post tayyor"))
-    assert toshmat.sent[-1][1] == "🔎 <b>Eshmat</b>: 3 ta grant topdim"     # through Toshmat's bot, tagged
+    assert toshmat.sent[-1][1] == "🔎 <b>Ergash</b>: 3 ta grant topdim"     # through Toshmat's bot, tagged
     assert mirzo.sent[-1][1] == "Post tayyor"                               # his own bot: no tag needed
     assert [e["agent"] for e in d.events()][:2] == ["writer", "finder"]     # and both are in the event log
 

@@ -199,6 +199,21 @@ class LLM:
             tool_choice={"type": "tool", "name": tool["name"]} if forced else {"type": "auto"},
         )
 
+    def _log_usage(self, purpose: str, model: str, u) -> None:
+        fast = model == settings.model_fast
+        cost = (u.input_tokens * (settings.price_fast_in if fast else settings.price_writer_in)
+                + u.output_tokens * (settings.price_fast_out if fast else settings.price_writer_out)) / 1_000_000
+        self.db.log_usage(purpose, model, u.input_tokens, u.output_tokens, cost)
+
+    def converse(self, purpose: str, model: str, system: str, messages: list, tools: list[dict],
+                 max_tokens: int = 4000):
+        """One step of a tool-using conversation (the manager's order loop). Returns the raw response;
+        the caller runs the tools it asked for and calls again with the results."""
+        resp = self.client.messages.create(model=model, max_tokens=max_tokens, system=system, messages=messages,
+                                           tools=tools, tool_choice={"type": "auto"})
+        self._log_usage(purpose, model, resp.usage)
+        return resp
+
     def _call(self, purpose: str, model: str, system: str, user: str, tool: dict, max_tokens: int = 2000) -> dict:
         try:
             resp = self._request(model, system, user, tool, max_tokens)
@@ -208,11 +223,7 @@ class LLM:
             log.warning("%s does not accept a forced tool call; retrying with tool_choice=auto", model)
             self._no_forced_tool.add(model)
             resp = self._request(model, system, user, tool, max_tokens)
-        u = resp.usage
-        fast = model == settings.model_fast
-        cost = (u.input_tokens * (settings.price_fast_in if fast else settings.price_writer_in)
-                + u.output_tokens * (settings.price_fast_out if fast else settings.price_writer_out)) / 1_000_000
-        self.db.log_usage(purpose, model, u.input_tokens, u.output_tokens, cost)
+        self._log_usage(purpose, model, resp.usage)
         for block in resp.content:
             if block.type == "tool_use":
                 return block.input
@@ -268,9 +279,11 @@ class LLM:
         user = f"Listing title: {title}\n\n{a}\n\n---\nSOURCE B (aggregator, {aggregator_url}):\n{aggregator_text}"
         return self._call("extract", settings.model_fast, system, user, EXTRACT_TOOL, max_tokens=2500)
 
-    def write(self, data: dict, options: dict) -> dict:
+    def write(self, data: dict, options: dict, notes: str | None = None) -> dict:
         user = ("Quyidagi faktlar asosida Telegram post matni va platforma maydonlarini yozing.\n\n"
                 + json.dumps(data, ensure_ascii=False, indent=1))
+        if notes:   # the owner's corrections and extra facts, given through Toshmat aka: they win over the data
+            user += ("\n\nKANAL EGASINING KO'RSATMALARI (yuqoridagi faktlardan ustun, albatta bajaring):\n" + notes)
         try:
             return self._call("write", settings.model_writer, WRITER_SYSTEM, user, write_tool(options), max_tokens=3000)
         except (anthropic.BadRequestError, anthropic.NotFoundError, RuntimeError) as e:

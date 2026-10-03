@@ -617,7 +617,7 @@ async function loadSettings() {
   const f = d.focus || {};
   const ft = el("input", { type: "text", placeholder: "masalan: maktab o'quvchilari uchun olimpiadalar" }); ft.value = f.text || "";
   const fd = el("input", { type: "number", min: "1", max: "60" }); fd.value = 7;
-  $("focusBox").replaceChildren(el("h2", {}, el("span", { text: "🎯 Eshmatga fokus" })),
+  $("focusBox").replaceChildren(el("h2", {}, el("span", { text: "🎯 Ergashga fokus" })),
     el("p", { class: "muted", style: "margin:0 0 8px;font-size:13.5px", text: f.text ? `Hozir: «${f.text}» (${f.until} gacha)` : "Hozir fokus yo'q." }),
     el("div", { class: "form wide" }, el("label", { text: "Nimani ko'proq qidirsin" }), ft, el("label", { text: "Necha kun" }), fd),
     el("div", { class: "actions" }, el("button", { class: "btn primary", text: "💾 Saqlash", onclick: () => doit("/api/focus", { text: ft.value, days: fd.value }, loadSettings) }),

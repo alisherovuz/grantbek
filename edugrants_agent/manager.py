@@ -1,15 +1,17 @@
 """Toshmat aka, the manager agent: schedules the team's work, puts it on the task board, checks the
 results, reports every evening, and takes orders typed in plain words in the agent group.
 
-Workers today: Eshmat (finder) and Mirzo (writer). Every job is a task row (type, agent, status,
+Workers: the finder, the writer and GrantBek (community). Every job is a task row (type, agent, status,
 result); everything that happens is an event row. Both are what the report and the dashboard read.
+Orders typed in the group run through real tools (orders.py): whatever Toshmat aka says he handed to
+someone has actually been handed to them.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from html import escape as _escape
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -24,7 +26,11 @@ def escape(text) -> str:   # keep Uzbek apostrophes readable (o'z, Xo'p)
     return _escape(str(text), quote=False)
 
 TAKEN = ("accepted", "drafted", "in_review", "published", "declined", "publishing")
-M, F, W = (AGENTS[a]["name"] for a in ("manager", "finder", "writer"))
+
+
+def name(agent: str) -> str:
+    """Read every time: at startup the names become the bots' names in Telegram."""
+    return AGENTS[agent]["name"]
 
 
 def _db():
@@ -63,7 +69,7 @@ async def weekly_list(created_by: str = "manager") -> str:
         note("writer", "info", "Haftalik ro'yxat o'tkazib yuborildi: Mirzo to'xtatilgan")
         return "paused"
     task_id = db.add_task("weekly_list", "writer", created_by=created_by, status="working")
-    await say("manager", f"{W}, bu haftaning muddatlar ro'yxatini tayyorla.", kind="task", task_id=task_id)
+    await say("manager", f"{name('writer')}, bu haftaning muddatlar ro'yxatini tayyorla.", kind="task", task_id=task_id)
     text, rows = build_weekly(db, settings.channel_handle)
     if not text:
         db.update_task(task_id, "done", {"items": 0})
@@ -142,10 +148,10 @@ def suggestions(n: dict) -> list[str]:
 
 def report_text(n: dict, tips: list[str]) -> str:
     lines = [f"📋 <b>Kunlik hisobot</b> · {datetime.now().strftime('%d.%m')}", "",
-             f"{F}: {n['searches_today']} marta qidirdi, {n['found']} ta e'lon ko'rdi",
+             f"{name('finder')}: {n['searches_today']} marta qidirdi, {n['found']} ta e'lon ko'rdi",
              f"  · takror {n['duplicates']} · vibe filtri {n['vibe_cut']} · rasmiy sahifa tekshirildi {n['checked']}",
              f"  · navbatda kutmoqda: {n['waiting_now']}",
-             f"{W}: bugun {n['taken_today']} ta olindi" + (f" (shundan {n['auto_written']} tasini o'zim berdim)"
+             f"{name('writer')}: bugun {n['taken_today']} ta olindi" + (f" (shundan {n['auto_written']} tasini o'zim berdim)"
                                                            if n.get("auto_written") else "") +
              f", {n['published_today']} ta chop etildi, {n['skipped_today']} ta o'tkazib yuborildi",
              f"{AGENTS['community']['name']}: {n['answered_dm']} ta shaxsiy xabar, {n['answered_comments']} ta izohga "
@@ -179,76 +185,22 @@ async def daily_report(created_by: str = "manager") -> str:
 
 
 # --------------------------------------------------------------------------- orders in plain words
-ORDER_TOOL = {
-    "name": "manager_action",
-    "description": "Decide what to do with the owner's message.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "action": {"type": "string", "enum": ["search_now", "weekly_list", "daily_report", "set_focus", "clear_focus",
-                                                  "pause_daily_search", "resume_daily_search", "status", "just_reply"]},
-            "focus_text": {"type": ["string", "null"],
-                           "description": "For set_focus: what the finder should look for more, in English, one sentence."},
-            "focus_days": {"type": ["integer", "null"], "description": "For set_focus: how many days (default 7)."},
-            "reply": {"type": "string", "description": "Short reply in Uzbek (Latin), friendly and a bit playful, as "
-                                                       "Toshmat aka, the team's boss. Say what you are doing."},
-        },
-        "required": ["action", "reply"],
-    },
-}
-
-
 def status_text(db) -> str:
     from .bot import next_search_at, ordered_finds
+    from .controls import paused_agents
     last = db.get_meta("last_search") or {}
     f = focus_text(db)
+    paused = [name(a) for a in sorted(paused_agents(db)) if a in AGENTS]
     return "\n".join([
         f"Navbatda: {len(ordered_finds())} ta topilma",
         f"Oxirgi qidiruv: {last.get('at', '—')[:16]}" + (f" · {last.get('seen')} e'lon" if last else ""),
         "Kunlik qidiruv: " + ("⏸ to'xtatilgan" if is_paused(db) else f"keyingisi {next_search_at() or '—'}"),
         f"Fokus: {f}" if f else "Fokus: yo'q",
+        "To'xtatilganlar: " + (", ".join(paused) if paused else "yo'q"),
     ])
 
 
-async def handle_order(text: str, bot) -> None:
-    """The owner wrote something to Toshmat aka in the group: understand it, do it, answer."""
-    from .bot import STATE, run_cycle
-    db = _db()
-    task_id = db.add_task("order", "manager", {"text": text}, created_by="owner", status="working")
-    note("manager", "task", f"Buyruq: {text}", task_id)
-    try:
-        llm = STATE["pipeline"].llm
-        d = await asyncio.to_thread(
-            llm._call, "order", settings.model_fast,
-            f"You are {M}, the manager of an AI team for the EduGrants channel: {F} finds grants, {W} writes posts and "
-            "the Monday deadline list. Map the owner's message to one action. Messages are usually Uzbek.\n"
-            "Status: " + status_text(db).replace("\n", "; "),
-            text, ORDER_TOOL, 500)
-    except Exception as e:
-        db.update_task(task_id, "failed", {"error": str(e)[:300]})
-        await say("manager", f"Kechirasiz, tushunolmadim: {escape(str(e))[:200]}", kind="error", task_id=task_id)
-        return
-    action, reply = d.get("action", "just_reply"), escape(d.get("reply") or "Xo'p!")
-    await say("manager", reply, task_id=task_id)
-    if action == "search_now":
-        asyncio.create_task(run_cycle(bot, notify=True, head="🔎 Qidiruv tugadi"))
-    elif action == "weekly_list":
-        await weekly_list(created_by="owner")
-    elif action == "daily_report":
-        await daily_report(created_by="owner")
-    elif action == "set_focus" and d.get("focus_text"):
-        days = int(d.get("focus_days") or 7)
-        db.set_meta("focus", {"text": d["focus_text"],
-                              "until": (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d")})
-        await say("manager", f"{F}, {days} kun davomida shunga e'tibor ber: <i>{escape(d['focus_text'])}</i>", kind="task")
-    elif action == "clear_focus":
-        db.set_meta("focus", {})
-    elif action == "pause_daily_search":
-        from .controls import set_paused
-        set_paused(db, "finder", True)
-    elif action == "resume_daily_search":
-        from .controls import set_paused
-        set_paused(db, "finder", False)
-    elif action == "status":
-        await say("manager", status_text(db))
-    db.update_task(task_id, "done", {"action": action})
+async def handle_order(text: str, bot, replied: str | None = None, reply_to: int | None = None) -> None:
+    """The owner wrote something to Toshmat aka in the group: understand it, do it with real tools, answer."""
+    from .orders import run_order
+    await run_order(text, bot, replied=replied, reply_to=reply_to)

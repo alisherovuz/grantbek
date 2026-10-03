@@ -26,7 +26,8 @@ from .dedupe import canonical_url, normalize_title
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+                        stream=sys.stdout)   # stderr shows up as red "error" lines on Railway
     ap = argparse.ArgumentParser(prog="edugrants_agent")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("bot")
