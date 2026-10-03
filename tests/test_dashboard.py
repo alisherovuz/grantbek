@@ -43,6 +43,7 @@ def sample():
     item(d, "fee-only", "rejected", {**POSTABLE, "application_fee": "paid"}, reason="application fee", fit=4)
     item(d, "fee-and-adults", "rejected", {**POSTABLE, "application_fee": "paid", "age_min": 25, "age_max": 35,
                                            "level": []}, reason="application fee", fit=4)
+    item(d, "average", "rejected", POSTABLE, reason="fit 3 below 4", fit=3)
     return d
 
 
@@ -51,12 +52,14 @@ def test_lists_only_grants_that_meet_the_main_rules(monkeypatch):
     out = dashboard.build(sample())
     titles = {i["title"]: i for i in out["items"]}
     # dropped finds are hidden, except the one whose ONLY problem is the application fee
-    assert set(titles) == {"Grant queue", "Grant taken", "Grant skipped", "Grant famous-masters", "Grant fee-only"}
+    assert set(titles) == {"Grant queue", "Grant taken", "Grant skipped", "Grant famous-masters", "Grant fee-only",
+                           "Grant average"}
     assert titles["Grant queue"]["verdict"] == "queue" and titles["Grant taken"]["verdict"] == "taken"
-    assert titles["Grant fee-only"]["verdict"] == "fee" and "Ariza to'lovi" in titles["Grant fee-only"]["why"]
+    assert titles["Grant fee-only"]["verdict"] == "backup" and "Ariza to'lovi" in titles["Grant fee-only"]["why"]
+    assert titles["Grant average"]["verdict"] == "backup" and "AI bahosi 3/5" in titles["Grant average"]["why"]
     assert titles["Grant skipped"]["why"] == "Muharrir: Bizga mos emas"
     f = out["funnel"]
-    assert (f["found"], f["duplicate"], f["vibe_cut"], f["checked"], f["two_rules"], f["shown_to_editors"]) == (13, 1, 1, 11, 5, 4)
+    assert (f["found"], f["duplicate"], f["vibe_cut"], f["checked"], f["two_rules"], f["shown_to_editors"]) == (14, 1, 1, 12, 6, 4)
     reasons = dict(out["reasons"])   # still counted in the chart, just not listed
     assert reasons["Post formatiga mos emas"] == 1 and reasons["Ariza to'lovi bor"] == 2 and reasons["Faqat magistratura/PhD yoki kattalar uchun"] == 1
     assert any(r.startswith("20 yoshgacha") for r in out["rules"])
@@ -190,7 +193,7 @@ def test_reset_from_dashboard_keeps_channel_history_and_costs(monkeypatch):
                             "official_url": None, "edugrants_url": None, "reactions_max": 1, "score": 1.0}])
         k = {"X-Key": dashboard.dashboard_key()}
         r = await client.post("/api/reset", json={"costs": False}, headers=k)
-        assert r.status == 200 and "13 ta topilma" in (await r.json())["message"]
+        assert r.status == 200 and "14 ta topilma" in (await r.json())["message"]
         assert d.conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
         assert len(d.history_rows()) == 1 and dashboard.costs(d, 7)["total"] == 0.1
         await client.post("/api/reset", json={"costs": True}, headers=k)

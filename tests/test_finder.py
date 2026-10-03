@@ -398,3 +398,39 @@ def test_only_good_finds_reach_editors(monkeypatch, change, fit, history, why):
     monkeypatch.setattr(settings, "age_max", 20)
     reason = final_check({**GOOD, **change}, "https://camp.example/", fit, history)
     assert (reason is None) if why is None else (why in reason)
+
+
+def test_quiet_day_still_researches_the_best_of_the_rest(monkeypatch, tmp_path):
+    """Vibe filter keeps only 1 of 8: the best 'fit 2' ones are researched too (fit 1 never)."""
+    from edugrants_agent.db import DB
+    monkeypatch.setattr(settings, "min_fit_score", 3)
+    monkeypatch.setattr(settings, "research_min_per_run", 4)
+    monkeypatch.setattr(settings, "profile_file", tmp_path / "none.md")
+    db = DB(":memory:")
+    ids = [db.insert_item(source="s", url=f"https://a.example/{i}", canonical_url=f"https://a.example/{i}",
+                          title=f"T{i}", norm_title=f"t{i}", summary="", published_at=None) for i in range(8)]
+    fits = {ids[0]: 4, ids[1]: 2, ids[2]: 2, ids[3]: 2, ids[4]: 2, ids[5]: 1, ids[6]: 1, ids[7]: 1}
+
+    class LLM:
+        def triage(self, items, *a, **k):
+            return {it["id"]: (fits[it["id"]] > 1, fits[it["id"]], "r") for it in items}
+    p = Pipeline(db, llm=LLM(), config={}, options={})
+    p.triage()
+    triaged = [r["id"] for r in db.by_status("triaged")]
+    assert len(triaged) == 4 and ids[0] in triaged and not set(triaged) & {ids[5], ids[6], ids[7]}
+
+
+def test_short_day_also_revives_recent_near_misses(monkeypatch, tmp_path):
+    from edugrants_agent.db import DB
+    monkeypatch.setattr(settings, "research_min_per_run", 3)
+    monkeypatch.setattr(settings, "profile_file", tmp_path / "none.md")
+    db = DB(":memory:")
+    old = db.insert_item(source="s", url="https://a.example/old", canonical_url="https://a.example/old",
+                         title="Old near miss", norm_title="old", summary="", published_at=None)
+    db.update(old, status="rejected", fit_score=2, reason="triage: low fit (2): small but ok")
+
+    class LLM:
+        def triage(self, items, *a, **k):
+            return {}
+    Pipeline(db, llm=LLM(), config={}, options={}).triage()
+    assert db.get(old)["status"] == "triaged" and "small but ok" in db.get(old)["fit_reason"]

@@ -151,13 +151,19 @@ def rules_text() -> list[str]:
     return rules
 
 
-def fee_only(row, data: dict) -> bool:
-    """Dropped only because applying costs money: everything else (Uzbeks, ages, deadline, format, fit)
-    is fine. Editors sometimes still want these, so they are the only dropped finds the dashboard lists."""
+def backup_why(row, data: dict) -> str | None:
+    """Zaxira (backup): dropped only for a soft reason, the application fee and/or an average AI score,
+    while everything that matters (Uzbeks, ages, deadline, post format) is fine. Returns why, or None."""
     from .pipeline import final_check
-    if data.get("application_fee") != "paid":
-        return False
-    return final_check({**data, "application_fee": "free"}, row["official_url"], row["fit_score"], row["history_id"]) is None
+    fee = data.get("application_fee") == "paid"
+    low = (row["fit_score"] or 0) < settings.min_show_fit and not row["history_id"]
+    if not (fee or low) or (row["fit_score"] or 0) < 2:
+        return None
+    soft = {**data, "application_fee": "free"}
+    if final_check(soft, row["official_url"], max(row["fit_score"] or 0, settings.min_show_fit), row["history_id"]):
+        return None
+    why = (["Ariza to'lovi bor"] if fee else []) + ([f"AI bahosi {row['fit_score']}/5, o'rtacha"] if low else [])
+    return "Zaxira: " + ", ".join(why) + ". Qolgan hamma talablarga mos"
 
 
 def verdict(row) -> str:
@@ -191,17 +197,18 @@ def build(db, days: int = 14) -> dict:
             continue
         funnel["checked"] += 1
         data = json.loads(r["data_json"] or "{}")
-        v = verdict(r)
+        v, backup = verdict(r), None
         if v == "rejected":
             key = reason_group(reason_uz(r["reason"]))     # counted for the chart, never listed...
             reasons[key] = reasons.get(key, 0) + 1
-            if not fee_only(r, data):                     # ...unless the application fee is its only problem
+            backup = backup_why(r, data)                  # ...unless only a soft rule (fee, average score) failed
+            if not backup:
                 continue
-            v = "fee"
-        if not meets_main_rules(data, let_through=v not in ("rejected", "fee")):
+            v = "backup"
+        if not meets_main_rules(data, let_through=v not in ("rejected", "backup")):
             continue
         funnel["two_rules"] += 1
-        if v != "fee":
+        if v != "backup":
             funnel["shown_to_editors"] += 1
         left = days_left(data)
         levels = [LEVEL_UZ.get(x, x) for x in data.get("level") or []]
@@ -230,7 +237,7 @@ def build(db, days: int = 14) -> dict:
             "status": r["status"],
             "why": ("" if v == "queue" else
                     "Muharrir: " + (r["reason"] or "sababsiz") if v == "skipped" else
-                    "" if v == "taken" else "Ariza to'lovi bor, qolgan hamma talablarga mos"),
+                    "" if v == "taken" else backup),
             "official": r["official_url"] or r["url"],
             "found_at": r["url"],
             "source": r["source"],

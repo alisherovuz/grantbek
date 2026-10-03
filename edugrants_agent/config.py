@@ -91,6 +91,9 @@ class Settings:
     # Only finds the AI scored at least this high (1-5) reach the editors; the rest wait under "Agent tashladi"
     min_show_fit: int = field(default_factory=lambda: _int("MIN_SHOW_FIT", 4))
     max_process_per_run: int = field(default_factory=lambda: _int("MAX_PROCESS_PER_RUN", 60))
+    # Each search researches at least this many finds, topping up with the best "fit 2" ones when the
+    # vibe filter keeps fewer, so a quiet day still produces candidates (each costs about a cent)
+    research_min_per_run: int = field(default_factory=lambda: _int("RESEARCH_MIN_PER_RUN", 12))
     min_days_left: int = field(default_factory=lambda: _int("MIN_DAYS_LEFT", 4))
     # Title matching window. Keep it well under a year so next year's round of the same
     # programme isn't mistaken for a repost (the official-page check handles that case).

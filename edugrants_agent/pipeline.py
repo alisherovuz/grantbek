@@ -221,6 +221,7 @@ class Pipeline:
             self.db.update(r["id"], status="triaged", fit_score=5,
                            fit_reason=f"oldin {h['times_posted']} marta joylangan, eng ko'p {h['reactions_max']} reaksiya")
         unknown = [r for r in new if not r["history_id"]]
+        kept, below = 0, []   # below: kept by the AI but under MIN_FIT_SCORE, as (fit, row, reason)
         for i in range(0, len(unknown), batch_size):
             chunk = unknown[i:i + batch_size]
             payload = [{"id": r["id"], "title": r["title"], "summary": (r["summary"] or "")[:400]} for r in chunk]
@@ -232,9 +233,22 @@ class Pipeline:
             for r in chunk:
                 keep, fit, reason = decisions.get(r["id"], (True, 3, "no decision, kept"))
                 if keep and fit < settings.min_fit_score:
+                    below.append((fit, r, reason))
                     keep, reason = False, f"low fit ({fit}): {reason}"
+                kept += keep
                 self.db.update(r["id"], status="triaged" if keep else "rejected", fit_score=fit,
                                fit_reason=reason if keep else None, reason=None if keep else f"triage: {reason}")
+        # A quiet day: research the most promising of the rest too, so editors still get candidates
+        need = settings.research_min_per_run - kept - len(known)
+        for fit, r, reason in sorted((b for b in below if b[0] >= 2), key=lambda b: -b[0])[:max(need, 0)]:
+            self.db.update(r["id"], status="triaged", reason=None, fit_reason=f"{reason} (zaxira uchun tekshirildi)")
+            need -= 1
+        if need > 0:   # still short: earlier searches' near misses from the last 3 days
+            for r in self.db.conn.execute(
+                    "SELECT id, reason FROM items WHERE status='rejected' AND reason LIKE 'triage: low fit (2)%'"
+                    " AND discovered_at >= datetime('now', '-3 days') ORDER BY id DESC LIMIT ?", (need,)).fetchall():
+                self.db.update(r["id"], status="triaged", reason=None,
+                               fit_reason=r["reason"].split(": ", 2)[-1] + " (zaxira uchun tekshirildi)")
 
     # ------------------------------------------------------------------ 3
     def research(self, item) -> None:

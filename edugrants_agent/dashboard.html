@@ -99,7 +99,7 @@
   .b-queue { background: var(--info-soft); color: var(--info); }
   .b-taken { background: var(--accent-soft); color: var(--accent); }
   .b-skipped { background: var(--warn-soft); color: var(--warn); }
-  .b-fee { background: var(--bad-soft); color: var(--bad); }
+  .b-backup { background: var(--warn-soft); color: var(--warn); }
   .meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
   .chip { background: var(--chip); border-radius: 6px; padding: 2px 8px; font-size: 12.5px; }
   .chip.soon { background: var(--warn-soft); color: var(--warn); }
@@ -191,8 +191,8 @@
 
 <script>
 const KEY = new URLSearchParams(location.search).get("key") || "";
-const LABEL = { queue: "Navbatda", taken: "Olindi", skipped: "Muharrir o'tkazdi", fee: "Ariza pullik" };
-const TABS = [["all", "Hammasi"], ["queue", "Navbatda"], ["taken", "Olindi"], ["skipped", "Muharrir o'tkazdi"], ["fee", "💸 Ariza pullik"]];
+const LABEL = { queue: "Navbatda", taken: "Olindi", skipped: "Muharrir o'tkazdi", backup: "Zaxira" };
+const TABS = [["all", "Hammasi"], ["queue", "Navbatda"], ["taken", "Olindi"], ["skipped", "Muharrir o'tkazdi"], ["backup", "🟡 Zaxira"]];
 const SKIP = [["fit", "🎯 Bizga mos emas"], ["fee", "💸 Pullik"], ["dup", "🔁 Allaqachon bor"],
               ["late", "⏳ Kech"], ["age", "👤 Yosh mos emas"], ["bad", "🚩 Ishonchsiz"]];
 let DATA = null, tab = "all";
@@ -283,7 +283,7 @@ function card(it) {
   ];
   if (fit || it.fit_reason) kids.push(el("div", { class: "line" }, el("span", { class: "fit", text: fit, title: "Kanalga mosligi (AI bahosi)" }),
                                           it.fit_reason ? el("span", { class: "muted", text: "  " + it.fit_reason }) : null));
-  if (it.why) kids.push(el("div", { class: "line why" + (it.verdict === "skipped" ? " ed" : ""), text: it.why }));
+  if (it.why) kids.push(el("div", { class: "line why" + (it.verdict === "skipped" || it.verdict === "backup" ? " ed" : ""), text: it.why }));
   if (it.summary) kids.push(el("details", {}, el("summary", { text: "Batafsil" }), el("div", { text: it.summary })));
 
   const actions = el("div", { class: "actions" });
