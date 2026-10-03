@@ -151,6 +151,15 @@ def rules_text() -> list[str]:
     return rules
 
 
+def fee_only(row, data: dict) -> bool:
+    """Dropped only because applying costs money: everything else (Uzbeks, ages, deadline, format, fit)
+    is fine. Editors sometimes still want these, so they are the only dropped finds the dashboard lists."""
+    from .pipeline import final_check
+    if data.get("application_fee") != "paid":
+        return False
+    return final_check({**data, "application_fee": "free"}, row["official_url"], row["fit_score"], row["history_id"]) is None
+
+
 def verdict(row) -> str:
     s = row["status"]
     if s in ("extracted", "shown"):
@@ -169,6 +178,7 @@ def build(db, days: int = 14) -> dict:
     funnel = {"found": len(rows), "duplicate": 0, "vibe_cut": 0, "waiting_check": 0, "checked": 0,
               "two_rules": 0, "shown_to_editors": 0}
     items = []
+    reasons: dict[str, int] = {}
     for r in rows:
         if r["status"] == "duplicate":
             funnel["duplicate"] += 1
@@ -182,10 +192,16 @@ def build(db, days: int = 14) -> dict:
         funnel["checked"] += 1
         data = json.loads(r["data_json"] or "{}")
         v = verdict(r)
-        if not meets_main_rules(data, let_through=v != "rejected"):
+        if v == "rejected":
+            key = reason_group(reason_uz(r["reason"]))     # counted for the chart, never listed...
+            reasons[key] = reasons.get(key, 0) + 1
+            if not fee_only(r, data):                     # ...unless the application fee is its only problem
+                continue
+            v = "fee"
+        if not meets_main_rules(data, let_through=v not in ("rejected", "fee")):
             continue
         funnel["two_rules"] += 1
-        if v != "rejected":
+        if v != "fee":
             funnel["shown_to_editors"] += 1
         left = days_left(data)
         levels = [LEVEL_UZ.get(x, x) for x in data.get("level") or []]
@@ -214,17 +230,12 @@ def build(db, days: int = 14) -> dict:
             "status": r["status"],
             "why": ("" if v == "queue" else
                     "Muharrir: " + (r["reason"] or "sababsiz") if v == "skipped" else
-                    "" if v == "taken" else reason_uz(r["reason"])),
+                    "" if v == "taken" else "Ariza to'lovi bor, qolgan hamma talablarga mos"),
             "official": r["official_url"] or r["url"],
             "found_at": r["url"],
             "source": r["source"],
             "discovered": local_time(r["discovered_at"]),
         })
-    reasons: dict[str, int] = {}
-    for it in items:
-        if it["verdict"] == "rejected":
-            key = reason_group(it["why"])
-            reasons[key] = reasons.get(key, 0) + 1
     return {"days": days, "funnel": funnel, "items": items, "rules": rules_text(), "costs": costs(db, days),
             "reasons": sorted(reasons.items(), key=lambda kv: -kv[1]),
             "today": date.today().isoformat()}
